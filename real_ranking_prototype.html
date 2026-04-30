@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>실제 데이터 연동 랭킹 대시보드</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #e74c3c;
+            --bg-color: #f8f9fa;
+        }
+        body {
+            font-family: 'Malgun Gothic', sans-serif;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .header {
+            display: flex;
+            flex-direction: column;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+            gap: 15px;
+        }
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .upload-area {
+            background: #e9ecef;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        .filters select {
+            padding: 10px;
+            font-size: 16px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            margin-right: 10px;
+            min-width: 200px;
+        }
+        .chart-container {
+            width: 100%;
+            height: 400px;
+            margin-bottom: 40px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f1f3f5;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+        .rank-badge {
+            display: inline-block;
+            width: 25px;
+            height: 25px;
+            line-height: 25px;
+            text-align: center;
+            background-color: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            font-size: 14px;
+        }
+        .link-btn {
+            color: #3498db;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .link-btn:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="header">
+        <div class="header-top">
+            <h2>📊 실데이터 연동 음식점 랭킹</h2>
+            <div class="upload-area">
+                📁 CSV 파일 업로드: <input type="file" id="csvFileInput" accept=".csv" />
+            </div>
+        </div>
+        <div class="filters">
+            <select id="regionFilter" onchange="updateDashboard()" disabled>
+                <option value="ALL">CSV 파일을 업로드해주세요</option>
+            </select>
+            <select id="categoryFilter" onchange="updateDashboard()" disabled>
+                <option value="ALL">CSV 파일을 업로드해주세요</option>
+            </select>
+        </div>
+    </div>
+
+    <h3>📈 Top 5 랭킹 변동 추이</h3>
+    <div class="chart-container">
+        <canvas id="rankTrendChart"></canvas>
+    </div>
+
+    <h3>🏆 최신 상세 랭킹</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>순위</th>
+                <th>음식점명</th>
+                <th>카테고리 (catename2)</th>
+                <th>지역 (depth3_rid)</th>
+                <th>방문/리뷰수 (cnt)</th>
+                <th>상세보기</th>
+            </tr>
+        </thead>
+        <tbody id="rankTableBody">
+            <tr>
+                <td colspan="6" style="text-align: center; padding: 30px; color: #7f8c8d;">
+                    CSV 파일을 업로드하면 데이터가 여기에 표시됩니다.
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<script>
+    let allData = []; // CSV에서 읽어들인 전체 데이터를 저장할 배열
+    let rankChart = null;
+
+    /* =========================================================
+       1. CSV 파일 업로드 이벤트 리스너
+       ========================================================= */
+    document.getElementById('csvFileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // PapaParse를 이용해 CSV 파일을 JSON 형태의 배열로 변환합니다.
+        Papa.parse(file, {
+            header: true,         // 첫 번째 줄을 Key 값으로 사용
+            dynamicTyping: true,  // 숫자는 숫자로 자동 변환
+            skipEmptyLines: true, // 빈 줄 무시
+            complete: function(results) {
+                allData = results.data;
+                initializeFilters(); // 필터 세팅
+                updateDashboard();   // 차트 및 테이블 렌더링
+            }
+        });
+    });
+
+    /* =========================================================
+       2. 필터 초기화 (a.depth3_rid, a.catename2 활용)
+       ========================================================= */
+    function initializeFilters() {
+        const regionSelect = document.getElementById('regionFilter');
+        const categorySelect = document.getElementById('categoryFilter');
+        
+        // 중복을 제거하기 위해 Set 자료구조 사용
+        const regions = new Set();
+        const categories = new Set();
+
+        allData.forEach(row => {
+            if (row['a.depth3_rid'] && row['a.depth3_rid'] !== 'NULL') {
+                regions.add(row['a.depth3_rid']);
+            }
+            if (row['a.catename2'] && row['a.catename2'] !== 'NULL' && row['a.catename2'] !== 'null') {
+                categories.add(row['a.catename2']);
+            }
+        });
+
+        // 지역 필터 옵션 생성
+        regionSelect.innerHTML = '<option value="ALL">전체 지역 (a.depth3_rid)</option>';
+        [...regions].sort().forEach(r => {
+            regionSelect.innerHTML += `<option value="${r}">${r}</option>`;
+        });
+        regionSelect.disabled = false;
+
+        // 카테고리 필터 옵션 생성
+        categorySelect.innerHTML = '<option value="ALL">전체 카테고리 (a.catename2)</option>';
+        [...categories].sort().forEach(c => {
+            categorySelect.innerHTML += `<option value="${c}">${c}</option>`;
+        });
+        categorySelect.disabled = false;
+    }
+
+    /* =========================================================
+       3. 대시보드 업데이트 함수 (데이터 필터링)
+       ========================================================= */
+    function updateDashboard() {
+        const selectedRegion = document.getElementById('regionFilter').value;
+        const selectedCategory = document.getElementById('categoryFilter').value;
+
+        // 선택된 조건에 맞게 데이터 필터링
+        const filteredData = allData.filter(row => {
+            const matchRegion = (selectedRegion === 'ALL') || (row['a.depth3_rid'] === selectedRegion);
+            const matchCategory = (selectedCategory === 'ALL') || (row['a.catename2'] === selectedCategory);
+            return matchRegion && matchCategory;
+        });
+
+        renderChart(filteredData);
+        renderTable(filteredData);
+    }
+
+    /* =========================================================
+       4. 차트 렌더링 (최근 날짜 기준 Top 5 음식점의 트렌드)
+       ========================================================= */
+    function renderChart(data) {
+        if (data.length === 0) return;
+
+        // 1. 데이터에 존재하는 모든 날짜 추출 및 정렬
+        const dates = [...new Set(data.map(d => d['a.date_id']))].filter(Boolean).sort();
+        const latestDate = dates[dates.length - 1];
+
+        // 2. 가장 최근 날짜(latestDate) 기준으로 상위 5개 음식점 추출
+        let latestData = data.filter(d => d['a.date_id'] === latestDate);
+        latestData.sort((a, b) => a['a.rank'] - b['a.rank']);
+        const top5Places = latestData.slice(0, 5).map(d => d['a.place_name']);
+
+        // 3. 차트용 데이터셋 구성
+        const datasets = top5Places.map((placeName, index) => {
+            const colors = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6'];
+            
+            // 추출한 Top 5 음식점의 날짜별 랭킹 추적
+            const rankData = dates.map(date => {
+                const record = data.find(d => d['a.place_name'] === placeName && d['a.date_id'] === date);
+                return record ? record['a.rank'] : null;
+            });
+
+            return {
+                label: placeName,
+                data: rankData,
+                borderColor: colors[index % colors.length],
+                backgroundColor: colors[index % colors.length],
+                tension: 0.1,
+                borderWidth: 2,
+                spanGaps: true // 중간에 비어있는 날짜가 있어도 선을 연결함
+            };
+        });
+
+        // 4. 차트 그리기
+        const ctx = document.getElementById('rankTrendChart').getContext('2d');
+        if (rankChart) { rankChart.destroy(); }
+        
+        rankChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: datasets
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        reverse: true, // 1위가 상단에 위치하도록 Y축 반전
+                        min: 1,
+                        ticks: { stepSize: 1 }
+                    }
+                },
+                plugins: {
+                    legend: { position: 'top' }
+                }
+            }
+        });
+    }
+
+    /* =========================================================
+       5. 테이블 렌더링
+       ========================================================= */
+    function renderTable(data) {
+        const tbody = document.getElementById('rankTableBody');
+        tbody.innerHTML = '';
+
+        if (data.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">해당 조건의 데이터가 없습니다.</td></tr>';
+            return;
+        }
+
+        // 가장 최근 날짜의 데이터만 테이블에 보여주기
+        const dates = [...new Set(data.map(d => d['a.date_id']))].filter(Boolean).sort();
+        const latestDate = dates[dates.length - 1];
+        
+        const currentData = data.filter(d => d['a.date_id'] === latestDate);
+        
+        // 랭킹 오름차순 정렬
+        currentData.sort((a, b) => a['a.rank'] - b['a.rank']);
+
+        currentData.forEach(item => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><span class="rank-badge">${item['a.rank'] || '-'}</span></td>
+                <td style="font-weight:bold;">${item['a.place_name'] || '-'}</td>
+                <td>${item['a.catename2'] || '-'}</td>
+                <td>${item['a.depth3_rid'] || '-'}</td>
+                <td>${item['a.cnt'] ? item['a.cnt'].toLocaleString() : 0}</td>
+                <td>
+                    <a href="${item['link'] || '#'}" target="_blank" class="link-btn">
+                        카카오맵 보기
+                    </a>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    }
+</script>
+
+</body>
+</html>
