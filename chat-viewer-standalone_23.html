@@ -1,0 +1,1114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주식부자 공지방 뷰어 v23</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; background: #0f172a; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #e2e8f0; }
+    #root { height: 100vh; }
+    #clist::-webkit-scrollbar { display: none; }
+    #clist { overflow-anchor: none; overscroll-behavior: contain; }
+    .loading { display:flex; align-items:center; justify-content:center; height:100vh; color:#94a3b8; font-size:13px; }
+    .clist-inner { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+    @media (max-width: 600px) { .clist-inner { padding: 0 12px; } }
+    select, button, input { color-scheme: dark; }
+    select option { background: #1e293b; color: #e2e8f0; }
+  </style>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+  <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.22.9/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"><div class="loading">로딩 중... (처음 열 때 인터넷 필요)</div></div>
+
+  <script type="text/babel" data-presets="react">
+  (function() {
+    const { useState, useEffect, useRef, useCallback, useMemo, useContext, createContext } = React;
+
+    // ═══════════════════════════════════════════════════════
+    // Storage
+    // ═══════════════════════════════════════════════════════
+    const ls = {
+      get(k) { const v = localStorage.getItem(k); return v !== null ? v : null; },
+      set(k, v) { try { localStorage.setItem(k, v); } catch(e) {} },
+      del(k) { localStorage.removeItem(k); }
+    };
+
+    const DB_NAME = "jubu_db", IMG_STORE = "images", MSG_STORE = "messages";
+    const ROOM_ID = "project";
+    let _db = null;
+    function openDB() {
+      if (_db) return Promise.resolve(_db);
+      return new Promise((res, rej) => {
+        const req = indexedDB.open(DB_NAME, 1);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains(IMG_STORE)) db.createObjectStore(IMG_STORE);
+          if (!db.objectStoreNames.contains(MSG_STORE)) db.createObjectStore(MSG_STORE);
+        };
+        req.onsuccess = () => { _db = req.result; res(_db); };
+        req.onerror = () => rej(req.error);
+      });
+    }
+    async function idbPut(store, key, val) {
+      const db = await openDB();
+      return new Promise((res, rej) => {
+        const tx = db.transaction(store, "readwrite");
+        const r = tx.objectStore(store).put(val, key);
+        r.onsuccess = () => res(); r.onerror = () => rej(r.error);
+      });
+    }
+    async function idbGet(store, key) {
+      const db = await openDB();
+      return new Promise((res, rej) => {
+        const tx = db.transaction(store, "readonly");
+        const r = tx.objectStore(store).get(key);
+        r.onsuccess = () => res(r.result || null); r.onerror = () => rej(r.error);
+      });
+    }
+    async function idbClearStore(store) {
+      const db = await openDB();
+      return new Promise((res, rej) => {
+        const tx = db.transaction(store, "readwrite");
+        const r = tx.objectStore(store).clear();
+        r.onsuccess = () => res(); r.onerror = () => rej(r.error);
+      });
+    }
+
+    const urlCache = new Map();
+    async function getBlobUrl(name, defType = "image/jpeg") {
+      if (urlCache.has(name)) return urlCache.get(name);
+      const blob = await idbGet(IMG_STORE, name);
+      if (!blob) return null;
+      const typed = blob.type ? blob : new Blob([blob], { type: defType });
+      const url = URL.createObjectURL(typed);
+      urlCache.set(name, url);
+      return url;
+    }
+    async function getBlobInfo(name) {
+      const blob = await idbGet(IMG_STORE, name);
+      return blob ? { size: blob.size, type: blob.type } : null;
+    }
+    function clearUrlCache() {
+      for (const u of urlCache.values()) URL.revokeObjectURL(u);
+      urlCache.clear();
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Constants
+    // ═══════════════════════════════════════════════════════
+    const MERGE_MS = 60 * 1000;
+    const SB_W = 16;
+    const ITEM_H = 80;
+    const DATE_H = 36;
+    const OVERSCAN = 20;
+
+    const NAME_ALIAS = {
+      "채상욱": "채상욱", "채상욱 리더": "채상욱",
+      "회색인간": "회색인간", "Gray Kim": "회색인간",
+    };
+    const normUser = u => NAME_ALIAS[(u||"").trim()] || (u||"알수없음").trim();
+
+    const UCFG = {
+      "채상욱":  { bg:"#1e1b4b", bc:"#312e81", tb:"#7c3aed", tc:"#ffffff", accent:"#a78bfa" },
+      "회색인간":{ bg:"#172554", bc:"#1e3a8a", tb:"#3b82f6", tc:"#ffffff", accent:"#93c5fd" },
+    };
+    const DCFG = { bg:"transparent", bc:"transparent", tb:"#475569", tc:"#e2e8f0", accent:null };
+
+    const K = suf => `jubu_${suf}`;
+
+    // ═══════════════════════════════════════════════════════
+    // Date parsing
+    // ═══════════════════════════════════════════════════════
+    function parseDate(s) {
+      if (!s) return null;
+      if (s instanceof Date) return isNaN(s) ? null : s;
+      let m = s.match(/^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{1,2}):(\d{2})/);
+      if (m) return new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5]);
+      m = s.match(/(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*(오전|오후)\s*(\d{1,2}):(\d{2})/);
+      if (m) {
+        let h = +m[5];
+        if (m[4]==="오후"&&h!==12) h+=12;
+        if (m[4]==="오전"&&h===12) h=0;
+        return new Date(+m[1],+m[2]-1,+m[3],h,+m[6]);
+      }
+      m = s.match(/(\d{4})\.(\d{2})\.(\d{2})\s+(\d{2}):(\d{2})/);
+      if (m) return new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5]);
+      const d = new Date(s);
+      return !isNaN(d) ? d : null;
+    }
+    const toDK = d => !d?"" : `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;
+    const toTS = d => {
+      if (!d) return "";
+      const h=d.getHours(), mn=d.getMinutes();
+      return `${h<12?"오전":"오후"} ${h===0?12:h>12?h-12:h}:${String(mn).padStart(2,"0")}`;
+    };
+    const minuteKeyOf = d => d ? `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}` : null;
+
+    const makeFid = (user, t, msg) => `${t}|${user}|${msg.slice(0,50)}`;
+    const isSystemMsg = m => /님이\s*(들어왔|나갔)습니다\.?\s*$/.test(m||"");
+
+    // ═══════════════════════════════════════════════════════
+    // Attachments
+    // ═══════════════════════════════════════════════════════
+    const ATTACH_RE = /^(\d{8})_(\d{6})(?:_(\d+))?\.([A-Za-z0-9]+)$/;
+    const IMG_EXT = /^(jpg|jpeg|png|gif|webp|bmp|heic|heif)$/i;
+
+    function classifyFile(name) {
+      const m = name.match(ATTACH_RE);
+      if (!m) return null;
+      const [, date, time, seqStr, ext] = m;
+      const seq = seqStr ? parseInt(seqStr) : 0;
+      return { type: IMG_EXT.test(ext) ? "image" : "file", date, time, seq, ext: ext.toLowerCase(), name };
+    }
+
+    function matchPhotoMsg(msg) {
+      const t = (msg||"").trim();
+      const m = t.match(/^<?(사진|이미지|Photo)>?(?:\s+(\d+)장)?$/i);
+      return m ? { count: m[2] ? parseInt(m[2]) : 1 } : null;
+    }
+    function isFileMsg(msg) {
+      const t = (msg||"").trim();
+      return /^(<(파일|동영상|음성메시지|Voice\s*Note)>|파일\s*[:：]\s*.+|^File\s*[:：]\s*.+|동영상|음성메시지|Voice\s*Note)$/i.test(t);
+    }
+
+    function buildAttachMap(entries) {
+      const map = {};
+      for (const { path } of entries) {
+        const name = path.split("/").pop();
+        const c = classifyFile(name);
+        if (!c) continue;
+        const mk = `${c.date}${c.time.slice(0,4)}`;
+        if (!map[mk]) map[mk] = { images: [], files: [] };
+        (c.type === "image" ? map[mk].images : map[mk].files).push(c);
+      }
+      for (const k in map) {
+        map[k].images.sort((a,b) => a.seq - b.seq || a.time.localeCompare(b.time));
+        map[k].files.sort((a,b) => a.time.localeCompare(b.time) || a.seq - b.seq);
+      }
+      return map;
+    }
+
+    async function saveAttachments(entries, onProgress) {
+      let i = 0;
+      for (const { path, entry } of entries) {
+        const name = path.split("/").pop();
+        if (!classifyFile(name)) { i++; continue; }
+        const blob = await entry.async("blob");
+        await idbPut(IMG_STORE, name, blob);
+        i++;
+        if (i % 5 === 0 || i === entries.length) onProgress && onProgress({ stage:"files", current:i, total:entries.length });
+      }
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Text parsing
+    // ═══════════════════════════════════════════════════════
+    function detectFormat(path, content) {
+      const head = content.split(/\r?\n/).slice(0, 20).join("\n");
+      if (/^\s*Date\s*,\s*User\s*,\s*Message/i.test(head)) return "csv";
+      return "kakao";
+    }
+
+    function parseKakaoTxt(text) {
+      const lines = text.split(/\r?\n/);
+      const rows = [];
+      let curDate = null;
+      let last = null;
+      let parsed = 0, sysSkipped = 0;
+
+      const dateSecRe = /^\s*[-=]*\s*(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일(?:\s*[월화수목금토일]요일)?\s*[-=]*\s*$/;
+      const koDotMsg = /^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{1,2}):(\d{2}),\s*(.+?)\s*:\s*(.*)$/;
+      const koDotSys = /^(\d{4})\.\s*(\d{1,2})\.\s*(\d{1,2})\.\s*(\d{1,2}):(\d{2}):\s*.+$/;
+      const macRe = /^\[([^\]]+)\]\s*\[(오전|오후)\s*(\d{1,2}):(\d{2})\]\s*(.*)$/;
+      const winRe = /^(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일\s*(오전|오후)\s*(\d{1,2}):(\d{2}),\s*(.+?)\s*:\s*(.*)$/;
+      const skipRe = /^(Talk_|저장한 날짜|Saved Date|카카오톡 대화|Chat with|.+ 님과 카카오톡|메시지가 삭제되었습니다)/i;
+
+      for (const raw of lines) {
+        const trimmed = raw.trim();
+
+        if (!trimmed) {
+          if (last) last.Message += "\n";
+          continue;
+        }
+
+        const ds = trimmed.match(dateSecRe);
+        if (ds) { curDate = { y:+ds[1], mo:+ds[2], d:+ds[3] }; last = null; continue; }
+
+        if (skipRe.test(trimmed)) { last = null; continue; }
+
+        let m = trimmed.match(koDotMsg);
+        if (m) {
+          last = { Date: `${m[1]}. ${m[2]}. ${m[3]}. ${m[4]}:${m[5]}`, User: m[6].trim(), Message: m[7] };
+          rows.push(last); parsed++; continue;
+        }
+        if (koDotSys.test(trimmed)) { last = null; sysSkipped++; continue; }
+
+        m = raw.match(macRe);
+        if (m && curDate) {
+          last = { Date: `${curDate.y}년 ${curDate.mo}월 ${curDate.d}일 ${m[2]} ${m[3]}:${m[4]}`, User: m[1].trim(), Message: m[5] };
+          rows.push(last); parsed++; continue;
+        }
+
+        m = raw.match(winRe);
+        if (m) {
+          last = { Date: `${m[1]}년 ${m[2]}월 ${m[3]}일 ${m[4]} ${m[5]}:${m[6]}`, User: m[7].trim(), Message: m[8] };
+          rows.push(last); parsed++; continue;
+        }
+
+        if (last) last.Message += "\n" + raw;
+      }
+      console.log(`[txt] 파싱: 메시지 ${parsed}개, 시스템 ${sysSkipped}개 스킵`);
+      return rows;
+    }
+
+    function parseText(content, fmt) {
+      if (fmt === "csv") return Papa.parse(content, { header: true, skipEmptyLines: true }).data;
+      return parseKakaoTxt(content);
+    }
+
+    function buildMessages(rows, attachMap) {
+      const out = [];
+      const avail = {};
+      for (const k in attachMap) avail[k] = { images:[...attachMap[k].images], files:[...attachMap[k].files] };
+      let imgM = 0, fileM = 0;
+
+      for (const row of rows) {
+        const rawMsg = row.Message || "";
+        if (isSystemMsg(rawMsg)) continue;
+        const user = normUser(row.User);
+        const d = parseDate(row.Date);
+        const t = d ? d.getTime() : 0;
+        const mk = minuteKeyOf(d);
+
+        let images = [], files = [];
+        if (mk && avail[mk]) {
+          const photo = matchPhotoMsg(rawMsg);
+          if (photo && avail[mk].images.length > 0) {
+            const taken = avail[mk].images.splice(0, photo.count);
+            images = taken.map(c => c.name);
+            imgM += taken.length;
+          }
+          if (isFileMsg(rawMsg) && avail[mk].files.length > 0) {
+            const taken = avail[mk].files.splice(0, 1);
+            files = taken.map(c => c.name);
+            fileM += taken.length;
+          }
+        }
+
+        const prev = out[out.length-1];
+        if (prev && prev.user === user && d && (t - prev._lt) < MERGE_MS) {
+          prev.msg += "\n" + rawMsg;
+          if (images.length) prev.images = [...(prev.images||[]), ...images];
+          if (files.length) prev.files = [...(prev.files||[]), ...files];
+          prev._lt = t;
+        } else {
+          const e = { fid: makeFid(user,t,rawMsg), user, msg:rawMsg, dk:toDK(d), ts:toTS(d), _t:t, _lt:t };
+          if (images.length) e.images = images;
+          if (files.length) e.files = files;
+          out.push(e);
+        }
+      }
+
+      let imgL = 0, fileL = 0;
+      for (const k in avail) { imgL += avail[k].images.length; fileL += avail[k].files.length; }
+      console.log(`[attach] 이미지 ${imgM} 매칭/${imgL} 미매칭, 파일 ${fileM} 매칭/${fileL} 미매칭`);
+      return { messages: out, stats: { imgMatched:imgM, imgLeft:imgL, fileMatched:fileM, fileLeft:fileL } };
+    }
+
+    function mergeMsgs(existing, incoming) {
+      const byFid = new Map(existing.map(m => [m.fid, m]));
+      const result = [...existing];
+      for (const nm of incoming) {
+        const ex = byFid.get(nm.fid);
+        if (ex) {
+          if (nm.images && (!ex.images || ex.images.length === 0)) ex.images = nm.images;
+          if (nm.files && (!ex.files || ex.files.length === 0)) ex.files = nm.files;
+        } else {
+          result.push(nm);
+        }
+      }
+      result.sort((a,b) => a._t - b._t);
+      result.forEach(m => { delete m._lt; });
+      return result;
+    }
+
+    function finalize(arr) {
+      arr.sort((a,b) => a._t - b._t);
+      arr.forEach(m => { delete m._lt; });
+      return arr;
+    }
+
+    async function processZip(file) {
+      const zip = await JSZip.loadAsync(file);
+      const entries = [];
+      zip.forEach((path, entry) => { if (!entry.dir) entries.push({ path, entry }); });
+      const textEntry = entries.find(e => /\.(csv|txt)$/i.test(e.path));
+      if (!textEntry) throw new Error("ZIP 안에 .csv 또는 .txt 파일이 없습니다.");
+      const attachEntries = entries.filter(e => classifyFile(e.path.split("/").pop()));
+      const textContent = await textEntry.entry.async("string");
+      const fmt = detectFormat(textEntry.path, textContent);
+      const rows = parseText(textContent, fmt);
+      console.log(`[zip] ${rows.length}행 (${fmt}), 첨부 후보 ${attachEntries.length}`);
+      return { rows, attachEntries, format: fmt };
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Persist messages
+    // ═══════════════════════════════════════════════════════
+    const STORE_FIELDS = ["fid","user","msg","dk","ts","_t","images","files"];
+
+    async function loadMsgs() {
+      try {
+        const data = await idbGet(MSG_STORE, ROOM_ID);
+        if (data && Array.isArray(data)) {
+          return data.filter(m => !isSystemMsg(m.msg)).map(m => ({ ...m, user: normUser(m.user) }));
+        }
+      } catch(e) { console.warn("로드 실패:", e); }
+      return null;
+    }
+    async function saveMsgsToStore(msgs) {
+      const compact = msgs.map(m => {
+        const o = {};
+        for (const k of STORE_FIELDS) if (m[k] !== undefined) o[k] = m[k];
+        return o;
+      });
+      try { await idbPut(MSG_STORE, ROOM_ID, compact); }
+      catch(e) { console.error("저장 실패:", e); alert("메시지 저장 실패: " + e.message); }
+    }
+
+    const BS = { background:"#1e293b", border:"1px solid #475569", borderRadius:6, color:"#e2e8f0", padding:"4px 11px", fontSize:12, cursor:"pointer", fontFamily:"inherit", fontWeight:500 };
+
+    // ═══════════════════════════════════════════════════════
+    // Lightbox
+    // ═══════════════════════════════════════════════════════
+    const LightboxContext = createContext(null);
+
+    function Lightbox({ url, onClose }) {
+      useEffect(() => {
+        const onKey = e => { if (e.key === "Escape") onClose(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [onClose]);
+      return (
+        <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.92)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,cursor:"zoom-out"}}>
+          <img src={url} onClick={e=>e.stopPropagation()} style={{maxWidth:"95%",maxHeight:"95%",objectFit:"contain",cursor:"default",boxShadow:"0 0 60px rgba(0,0,0,0.8)"}} />
+          <div style={{position:"absolute",top:16,right:20,color:"#fff",fontSize:12,background:"rgba(0,0,0,0.45)",padding:"4px 10px",borderRadius:6,pointerEvents:"none"}}>ESC 또는 배경 클릭으로 닫기</div>
+        </div>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Image / File
+    // ═══════════════════════════════════════════════════════
+    function LazyImage({ name }) {
+      const [url, setUrl] = useState(null);
+      const [error, setError] = useState(false);
+      const openLightbox = useContext(LightboxContext);
+      useEffect(() => {
+        let cancelled = false;
+        (async () => {
+          try {
+            const u = await getBlobUrl(name);
+            if (cancelled) return;
+            if (u) setUrl(u); else setError(true);
+          } catch(e) { if (!cancelled) setError(true); }
+        })();
+        return () => { cancelled = true; };
+      }, [name]);
+
+      const box = { width:140, height:140, borderRadius:6 };
+      if (error) return (
+        <div title={name} style={{...box, background:"#1e293b",border:"1px dashed #334155",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:10,gap:4}}>
+          <div style={{fontSize:22}}>🖼️</div><div>이미지 없음</div>
+        </div>
+      );
+      if (!url) return <div style={{...box, background:"#1e293b"}} />;
+      return (
+        <img src={url} loading="lazy" alt={name} onClick={e => { e.stopPropagation(); openLightbox(url); }}
+          style={{...box, objectFit:"cover", cursor:"zoom-in", border:"1px solid #334155"}} />
+      );
+    }
+
+    function ImageGallery({ images }) {
+      return (
+        <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}} onClick={e=>e.stopPropagation()}>
+          {images.map(name => <LazyImage key={name} name={name} />)}
+        </div>
+      );
+    }
+
+    const FILE_ICONS = {
+      pdf:"📄", doc:"📝", docx:"📝", hwp:"📝",
+      xls:"📊", xlsx:"📊", csv:"📊",
+      ppt:"📽️", pptx:"📽️",
+      zip:"🗜️", rar:"🗜️", "7z":"🗜️", tar:"🗜️", gz:"🗜️",
+      mp3:"🎵", m4a:"🎵", wav:"🎵", ogg:"🎵", flac:"🎵",
+      mp4:"🎬", mov:"🎬", avi:"🎬", mkv:"🎬", webm:"🎬", m4v:"🎬",
+      txt:"📃", md:"📃",
+    };
+    const formatSize = b => !b ? "" : b < 1024 ? `${b} B` : b < 1024*1024 ? `${(b/1024).toFixed(1)} KB` : `${(b/(1024*1024)).toFixed(1)} MB`;
+
+    function FileCard({ name }) {
+      const [info, setInfo] = useState(null);
+      const [url, setUrl] = useState(null);
+      const [error, setError] = useState(false);
+      const ext = (name.split(".").pop() || "").toLowerCase();
+      const icon = FILE_ICONS[ext] || "📎";
+
+      useEffect(() => {
+        let cancelled = false;
+        (async () => {
+          try {
+            const i = await getBlobInfo(name);
+            if (cancelled) return;
+            if (!i) { setError(true); return; }
+            setInfo(i);
+            const mimeMap = { pdf:"application/pdf", mp4:"video/mp4", mov:"video/quicktime", mp3:"audio/mpeg" };
+            const u = await getBlobUrl(name, mimeMap[ext] || "application/octet-stream");
+            if (!cancelled) setUrl(u);
+          } catch(e) { if (!cancelled) setError(true); }
+        })();
+        return () => { cancelled = true; };
+      }, [name, ext]);
+
+      return (
+        <div onClick={e=>e.stopPropagation()} style={{display:"inline-flex",alignItems:"center",gap:12,padding:"10px 14px",background:"#1e293b",border:"1px solid #334155",borderRadius:8,marginTop:6,marginRight:6,maxWidth:320}}>
+          <div style={{fontSize:28,lineHeight:1}}>{icon}</div>
+          <div style={{minWidth:0,flex:1}}>
+            <div style={{fontSize:12,fontWeight:600,color:"#e2e8f0",wordBreak:"break-all",lineHeight:1.35}}>{name}</div>
+            <div style={{fontSize:10,color:"#94a3b8",marginTop:3,display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+              {error && <span style={{color:"#f87171"}}>파일 없음</span>}
+              {info && <span>{formatSize(info.size)}</span>}
+              {url && <a href={url} target="_blank" rel="noopener" style={{color:"#60a5fa",textDecoration:"none",fontWeight:600}}>🔍 열기</a>}
+              {url && <a href={url} download={name} style={{color:"#a78bfa",textDecoration:"none",fontWeight:600}}>💾 저장</a>}
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    function FileGallery({ files }) {
+      return (
+        <div style={{display:"flex",flexWrap:"wrap",gap:0,marginTop:6}} onClick={e=>e.stopPropagation()}>
+          {files.map(name => <FileCard key={name} name={name} />)}
+        </div>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Message
+    // ═══════════════════════════════════════════════════════
+    function displayText(m) {
+      if (!m.msg) return "";
+      const hasImg = m.images && m.images.length > 0;
+      const hasFile = m.files && m.files.length > 0;
+      if (!hasImg && !hasFile) return m.msg;
+      let lines = m.msg.split("\n");
+      if (hasImg) lines = lines.filter(l => !matchPhotoMsg(l));
+      if (hasFile) lines = lines.filter(l => !isFileMsg(l));
+      return lines.join("\n");
+    }
+
+    function Msg({ m, isHL, onHL, fs }) {
+      const c = UCFG[m.user]||DCFG;
+      const text = displayText(m);
+      const hasImages = m.images && m.images.length > 0;
+      const hasFiles = m.files && m.files.length > 0;
+      const baseStyle = {
+        marginBottom:4, padding:"10px 14px",
+        background: isHL ? "rgba(245, 158, 11, 0.12)" : c.bg,
+        border:`1px solid ${isHL?"#f59e0b":c.bc}`,
+        borderRadius:8, cursor:"pointer",
+        boxShadow: isHL ? "0 2px 8px rgba(245,158,11,0.2)" : "none",
+      };
+      // Subtle vertical accent line on the left for featured speakers
+      if (c.accent && !isHL) baseStyle.borderLeft = `3px solid ${c.accent}`;
+      return (
+        <div onDoubleClick={()=>{const s=window.getSelection();s&&s.removeAllRanges();onHL(m.fid);}} title="더블클릭으로 형광펜" style={baseStyle}>
+          <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:5,flexWrap:"wrap"}}>
+            <span style={{background:c.tb,color:c.tc,borderRadius:4,padding:"2px 9px",fontSize:11,fontWeight:700}}>{m.user}</span>
+            <span style={{fontSize:11,color:"#94a3b8"}}>{m.ts}</span>
+            {hasImages && <span style={{fontSize:10,color:"#cbd5e1",background:"#334155",borderRadius:3,padding:"1px 6px"}}>📷 {m.images.length}</span>}
+            {hasFiles && <span style={{fontSize:10,color:"#cbd5e1",background:"#334155",borderRadius:3,padding:"1px 6px"}}>📎 {m.files.length}</span>}
+            {isHL&&<span style={{marginLeft:"auto",color:"#fbbf24",fontSize:11,fontWeight:700}}>✏ 형광펜</span>}
+          </div>
+          {text && <div style={{fontSize:fs,lineHeight:1.75,color:"#e2e8f0",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{text}</div>}
+          {hasImages && <ImageGallery images={m.images} />}
+          {hasFiles && <FileGallery files={m.files} />}
+        </div>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Virtual list
+    // ═══════════════════════════════════════════════════════
+    // Wrapper that measures its actual rendered height and reports back.
+    // This lets the parent build an accurate posIndex so scrolling doesn't
+    // jump when the slice of visible items shifts.
+    function MeasuredRow({ itemKey, onMeasure, children }) {
+      const ref = useRef(null);
+      React.useLayoutEffect(() => {
+        if (!ref.current || !onMeasure) return;
+        const h = ref.current.getBoundingClientRect().height;
+        if (h > 0) onMeasure(itemKey, h);
+      });
+      return <div ref={ref}>{children}</div>;
+    }
+
+    function VirtualList({ flat, posIndex, totalH, hl, fs, onHL, listRef, onScroll, onMeasure }) {
+      const [scrollTop, setScrollTop] = useState(0);
+      const [viewH, setViewH] = useState(600);
+
+      // Throttle scroll updates with requestAnimationFrame so we re-render
+      // at most once per frame even when wheel events fire rapidly.
+      useEffect(() => {
+        const el = listRef.current; if (!el) return;
+        let rafId = null;
+        const upd = () => {
+          rafId = null;
+          setScrollTop(el.scrollTop);
+          setViewH(el.clientHeight);
+          onScroll && onScroll(el.scrollTop, el.clientHeight);
+        };
+        const onScrollEvt = () => {
+          if (rafId == null) rafId = requestAnimationFrame(upd);
+        };
+        el.addEventListener("scroll", onScrollEvt, { passive:true });
+        const obs = new ResizeObserver(upd);
+        obs.observe(el);
+        upd();
+        return () => {
+          el.removeEventListener("scroll", onScrollEvt);
+          obs.disconnect();
+          if (rafId != null) cancelAnimationFrame(rafId);
+        };
+      }, [listRef, onScroll]);
+
+      const findIdx = useCallback((y) => {
+        const offs = posIndex;
+        let lo = 0, hi = offs.length - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (offs[mid] < y) lo = mid + 1; else hi = mid;
+        }
+        return Math.max(0, lo - 1);
+      }, [posIndex]);
+
+      const startIdx = Math.max(0, findIdx(scrollTop) - OVERSCAN);
+      const endIdx = Math.min(flat.length, findIdx(scrollTop + viewH) + OVERSCAN);
+      const visible = flat.slice(startIdx, endIdx);
+      const topPad = posIndex[startIdx] || 0;
+
+      return (
+        <div style={{position:"relative", height: totalH}}>
+          <div style={{position:"absolute", top: topPad, left:0, right:0}}>
+            {visible.map((item) => {
+              if (item.type === "date") {
+                return (
+                  <MeasuredRow key={item.key} itemKey={item.key} onMeasure={onMeasure}>
+                    <div style={{height: DATE_H, display:"flex", alignItems:"center", justifyContent:"center"}}>
+                      <span style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:"3px 18px",fontSize:11,color:"#94a3b8",fontWeight:600,boxShadow:"none"}}>{item.dk}</span>
+                    </div>
+                  </MeasuredRow>
+                );
+              }
+              return (
+                <MeasuredRow key={item.key} itemKey={item.key} onMeasure={onMeasure}>
+                  <Msg m={item.m} isHL={hl.has(item.m.fid)} onHL={onHL} fs={fs} />
+                </MeasuredRow>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // Dialogs
+    // ═══════════════════════════════════════════════════════
+    function ProgressBar({ stage, current, total }) {
+      const label = stage === "unzipping" ? "📦 ZIP 압축 해제 중..."
+        : stage === "files" ? `💾 첨부 저장 ${current}/${total}`
+        : stage === "parse" ? "📄 대화 파싱 중..."
+        : "처리 중...";
+      const pct = total > 0 ? Math.round((current/total)*100) : 0;
+      return (
+        <div style={{position:"fixed",top:0,left:0,right:0,background:"#7c3aed",color:"#fff",padding:"10px 16px",textAlign:"center",fontSize:12,zIndex:150,boxShadow:"0 2px 8px rgba(124,58,237,0.3)"}}>
+          {label}
+          {stage === "files" && total > 0 && (
+            <div style={{marginTop:6,height:3,background:"rgba(255,255,255,0.25)",borderRadius:2,overflow:"hidden",maxWidth:320,margin:"6px auto 0"}}>
+              <div style={{height:"100%",width:`${pct}%`,background:"#fff",transition:"width .15s"}} />
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function StatBanner({ stats, onClose }) {
+      if (!stats) return null;
+      const { msgs, imgMatched, imgLeft, fileMatched, fileLeft } = stats;
+      return (
+        <div style={{position:"fixed",top:16,right:16,background:"#1e293b",border:"1px solid #10b981",borderRadius:10,padding:"12px 16px",fontSize:12,zIndex:120,boxShadow:"0 4px 20px rgba(16,185,129,0.2)",maxWidth:320}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+            <span style={{fontSize:16}}>✅</span>
+            <strong style={{color:"#6ee7b7",fontSize:13}}>업로드 완료</strong>
+            <button onClick={onClose} style={{marginLeft:"auto",background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:16,padding:0,lineHeight:1}}>×</button>
+          </div>
+          <div style={{color:"#e2e8f0",lineHeight:1.7}}>
+            💬 메시지 <strong>{msgs.toLocaleString()}</strong>개<br/>
+            🖼️ 이미지 매칭 <strong>{imgMatched}</strong>{imgLeft > 0 && <span style={{color:"#fbbf24"}}> (미매칭 {imgLeft})</span>}<br/>
+            📎 파일 매칭 <strong>{fileMatched}</strong>{fileLeft > 0 && <span style={{color:"#fbbf24"}}> (미매칭 {fileLeft})</span>}
+          </div>
+        </div>
+      );
+    }
+
+    function MergeDialog({ onMerge, onReplace, onCancel, newCount, existCount, attachCount }) {
+      return (
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.7)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,backdropFilter:"blur(4px)"}}>
+          <div style={{background:"#1e293b",border:"1px solid #334155",borderRadius:14,padding:"32px 36px",maxWidth:460,width:"90%",textAlign:"center",fontFamily:"inherit",boxShadow:"0 20px 60px rgba(0,0,0,0.5)"}}>
+            <div style={{fontSize:40,marginBottom:14}}>🔀</div>
+            <h3 style={{color:"#e2e8f0",fontSize:17,fontWeight:700,marginBottom:16,letterSpacing:"-0.5px"}}>새 파일을 어떻게 할까요?</h3>
+            <div style={{background:"#0f172a",border:"1px solid #334155",borderRadius:8,padding:"14px 16px",marginBottom:16,textAlign:"left",fontSize:12,lineHeight:2}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span style={{color:"#94a3b8"}}>📁 저장된 대화</span>
+                <span style={{color:"#a78bfa",fontWeight:700}}>{existCount.toLocaleString()}개</span>
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <span style={{color:"#94a3b8"}}>📂 새 파일</span>
+                <span style={{color:"#60a5fa",fontWeight:700}}>{newCount.toLocaleString()}개{attachCount>0 && ` + 첨부 ${attachCount}`}</span>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+              <button onClick={onMerge} style={{background:"linear-gradient(135deg,#7c3aed,#2563eb)",border:"none",borderRadius:8,color:"#fff",padding:"11px 20px",fontSize:13,fontWeight:700,cursor:"pointer"}}>🔀 합치기</button>
+              <button onClick={onReplace} style={{background:"#1e293b",border:"1px solid #475569",borderRadius:8,color:"#e2e8f0",padding:"11px 20px",fontSize:13,cursor:"pointer",fontWeight:500}}>🗑 새로 시작</button>
+              <button onClick={onCancel} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:8,color:"#94a3b8",padding:"11px 16px",fontSize:13,cursor:"pointer",fontWeight:500}}>취소</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════
+    // App
+    // ═══════════════════════════════════════════════════════
+    function App() {
+      const [msgs, setMsgs] = useState(null);
+      const [hl, setHL] = useState(new Set());
+      const [fs, setFs] = useState(14);
+      const [scrollSt, setScrollSt] = useState({ st:0, ch:600 });
+      const [pending, setPending] = useState(null);
+      const [loading, setLoading] = useState(true);
+      const [processing, setProcessing] = useState(null);
+      const [lightboxUrl, setLightboxUrl] = useState(null);
+      const [stats, setStats] = useState(null);
+
+      const listRef = useRef(null);
+      const trackRef = useRef(null);
+      const drag = useRef(null);
+      const scrollRestored = useRef(false);
+      const scrollSaveTimer = useRef(null);
+
+      // Per-item measured heights (key -> height in px). Used to build an
+      // accurate posIndex so virtual-list slice changes don't visually jump.
+      const heightsRef = useRef(new Map());
+      const [posVersion, setPosVersion] = useState(0);
+      const rebuildPending = useRef(false);
+
+      const onMeasure = useCallback((key, h) => {
+        const stored = heightsRef.current.get(key);
+        if (stored == null || Math.abs(stored - h) > 0.5) {
+          heightsRef.current.set(key, h);
+          if (!rebuildPending.current) {
+            rebuildPending.current = true;
+            requestAnimationFrame(() => {
+              rebuildPending.current = false;
+              setPosVersion(v => v + 1);
+            });
+          }
+        }
+      }, []);
+
+      // Clear measurements on window resize (text wrapping changes height)
+      useEffect(() => {
+        let timer;
+        const onResize = () => {
+          clearTimeout(timer);
+          timer = setTimeout(() => {
+            heightsRef.current.clear();
+            setPosVersion(v => v + 1);
+          }, 200);
+        };
+        window.addEventListener("resize", onResize);
+        return () => { window.removeEventListener("resize", onResize); clearTimeout(timer); };
+      }, []);
+
+      // Load on mount
+      useEffect(() => {
+        (async () => {
+          try { const v = ls.get(K("hl")); if (v) setHL(new Set(JSON.parse(v))); } catch(e){}
+          try { const v = ls.get(K("fs")); if (v) setFs(+v||14); } catch(e){}
+          const stored = await loadMsgs();
+          if (stored && stored.length > 0) setMsgs(stored);
+          else setMsgs([]);
+          setLoading(false);
+        })();
+      }, []);
+
+      // Auto-dismiss stats banner
+      useEffect(() => {
+        if (!stats) return;
+        const t = setTimeout(() => setStats(null), 8000);
+        return () => clearTimeout(t);
+      }, [stats]);
+
+      // Build flat list and position index
+      const { flat, posIndex, totalH, dates, posByFid } = useMemo(() => {
+        if (!msgs || msgs.length === 0) return { flat:[], posIndex:[0], totalH:0, dates:[], posByFid:{} };
+        const dateSet = new Set();
+        for (const m of msgs) if (m.dk) dateSet.add(m.dk);
+        const ds = [...dateSet];
+        const byDate = {};
+        for (const m of msgs) {
+          if (!byDate[m.dk]) byDate[m.dk] = [];
+          byDate[m.dk].push(m);
+        }
+        const f = [];
+        for (const dk of ds) {
+          f.push({ type:"date", dk, key:`d:${dk}` });
+          for (const m of (byDate[dk] || [])) f.push({ type:"msg", m, key:`m:${m.fid}` });
+        }
+        const offs = new Array(f.length + 1);
+        offs[0] = 0;
+        const fidPos = {};
+        const heights = heightsRef.current;
+        for (let i=0; i<f.length; i++) {
+          const item = f[i];
+          const measured = heights.get(item.key);
+          const h = measured != null ? measured : (item.type === "date" ? DATE_H : ITEM_H);
+          offs[i+1] = offs[i] + h;
+          if (item.type === "msg") fidPos[item.m.fid] = offs[i];
+        }
+        return { flat:f, posIndex:offs, totalH:offs[f.length], dates:ds, posByFid:fidPos };
+      }, [msgs, posVersion]);
+
+      // Restore scroll position once
+      useEffect(() => {
+        if (!loading && msgs && totalH > 0 && !scrollRestored.current) {
+          scrollRestored.current = true;
+          setTimeout(() => {
+            const v = ls.get(K("pos"));
+            if (v && listRef.current) listRef.current.scrollTop = +v;
+          }, 100);
+        }
+      }, [loading, msgs, totalH]);
+
+      const applyMsgs = useCallback(async arr => {
+        setMsgs(arr);
+        await saveMsgsToStore(arr);
+      }, []);
+
+      const handleFile = useCallback(async (file) => {
+        const isZip = /\.zip$/i.test(file.name);
+        try {
+          if (isZip) {
+            setProcessing({ stage:"unzipping", current:0, total:0 });
+            const { rows, attachEntries } = await processZip(file);
+            setProcessing({ stage:"parse", current:0, total:1 });
+            const attachMap = buildAttachMap(attachEntries);
+            const { messages: newMsgs, stats: newStats } = buildMessages(rows, attachMap);
+
+            const stored = await loadMsgs();
+            if (stored && stored.length > 0) {
+              setProcessing(null);
+              setPending({ newMsgs, existMsgs:stored, attachEntries, stats: newStats });
+            } else {
+              setProcessing({ stage:"files", current:0, total:attachEntries.length });
+              await saveAttachments(attachEntries, setProcessing);
+              await applyMsgs(finalize(newMsgs));
+              setProcessing(null);
+              setStats({ msgs: newMsgs.length, ...newStats });
+            }
+          } else {
+            const text = await file.text();
+            const fmt = detectFormat(file.name, text);
+            const rows = parseText(text, fmt);
+            const { messages: newMsgs, stats: newStats } = buildMessages(rows, {});
+            const stored = await loadMsgs();
+            if (stored && stored.length > 0) {
+              setPending({ newMsgs, existMsgs:stored, attachEntries:null, stats: newStats });
+            } else {
+              await applyMsgs(finalize(newMsgs));
+              setStats({ msgs: newMsgs.length, ...newStats });
+            }
+          }
+        } catch(e) {
+          setProcessing(null);
+          alert("파일 처리 실패: " + e.message);
+          console.error(e);
+        }
+      }, [applyMsgs]);
+
+      const onMerge = useCallback(async () => {
+        if (!pending) return;
+        if (pending.attachEntries && pending.attachEntries.length > 0) {
+          setProcessing({ stage:"files", current:0, total:pending.attachEntries.length });
+          await saveAttachments(pending.attachEntries, setProcessing);
+          setProcessing(null);
+        }
+        const merged = mergeMsgs(pending.existMsgs, pending.newMsgs);
+        await applyMsgs(merged);
+        setStats({ msgs: pending.newMsgs.length, ...pending.stats });
+        setPending(null);
+      }, [pending, applyMsgs]);
+
+      const onReplace = useCallback(async () => {
+        if (!pending) return;
+        clearUrlCache();
+        await idbClearStore(IMG_STORE);
+        if (pending.attachEntries && pending.attachEntries.length > 0) {
+          setProcessing({ stage:"files", current:0, total:pending.attachEntries.length });
+          await saveAttachments(pending.attachEntries, setProcessing);
+          setProcessing(null);
+        }
+        await applyMsgs(finalize(pending.newMsgs));
+        setHL(new Set());
+        ls.set(K("hl"), "[]");
+        ls.set(K("pos"), "0");
+        setStats({ msgs: pending.newMsgs.length, ...pending.stats });
+        setPending(null);
+      }, [pending, applyMsgs]);
+
+      const onScroll = useCallback((st, ch) => {
+        setScrollSt({ st, ch });
+        clearTimeout(scrollSaveTimer.current);
+        scrollSaveTimer.current = setTimeout(() => ls.set(K("pos"), String(st)), 700);
+      }, []);
+
+      // Custom scrollbar geometry
+      const ch = scrollSt.ch || 600;
+      const sh = totalH || 1;
+      const st = scrollSt.st || 0;
+      const th = Math.max(30, (ch/Math.max(sh,1)) * ch);
+      const ms = Math.max(0, sh - ch);
+      const tt = ms > 0 ? (st/ms) * (ch - th) : 0;
+
+      const onTD = useCallback(e => {
+        e.preventDefault(); e.stopPropagation();
+        drag.current = { y0: e.clientY, s0: listRef.current?.scrollTop || 0 };
+        const mv = ev => { if (!drag.current || !listRef.current) return; listRef.current.scrollTop = drag.current.s0 + (ev.clientY - drag.current.y0)/(ch-th)*ms; };
+        const up = () => { drag.current = null; window.removeEventListener("mousemove", mv); window.removeEventListener("mouseup", up); };
+        window.addEventListener("mousemove", mv); window.addEventListener("mouseup", up);
+      }, [ch, th, ms]);
+
+      const onTC = useCallback(e => {
+        if (!listRef.current || !trackRef.current) return;
+        const r = trackRef.current.getBoundingClientRect();
+        listRef.current.scrollTop = ((e.clientY - r.top)/ch) * ms;
+      }, [ch, ms]);
+
+      const scrollToFid = useCallback(fid => {
+        if (!listRef.current) return;
+        const off = posByFid[fid];
+        if (off != null) listRef.current.scrollTop = Math.max(0, off - 70);
+      }, [posByFid]);
+
+      const scrollToDate = useCallback(dk => {
+        if (!msgs) return;
+        const m = msgs.find(mm => mm.dk === dk);
+        if (m) scrollToFid(m.fid);
+      }, [msgs, scrollToFid]);
+
+      const toggleHL = useCallback(fid => {
+        setHL(p => { const n = new Set(p); n.has(fid) ? n.delete(fid) : n.add(fid); ls.set(K("hl"), JSON.stringify([...n])); return n; });
+      }, []);
+
+      const hlMsgs = useMemo(() => msgs ? msgs.filter(m => hl.has(m.fid)) : [], [msgs, hl]);
+
+      const navHL = useCallback(dir => {
+        if (!hlMsgs.length || !listRef.current) return;
+        const cur = listRef.current.scrollTop;
+        const sorted = hlMsgs.map(m => ({ fid:m.fid, off: posByFid[m.fid] || 0 })).sort((a,b) => a.off - b.off);
+        if (dir === "n") {
+          const found = sorted.find(s => s.off > cur + 50) || sorted[0];
+          scrollToFid(found.fid);
+        } else {
+          const found = [...sorted].reverse().find(s => s.off < cur - 50) || sorted[sorted.length-1];
+          scrollToFid(found.fid);
+        }
+      }, [hlMsgs, posByFid, scrollToFid]);
+
+      // Jump one message at a time
+      const navByMsg = useCallback(dir => {
+        if (!listRef.current || !flat.length) return;
+        const el = listRef.current;
+        const cur = el.scrollTop;
+        const offsets = [];
+        for (let i = 0; i < flat.length; i++) {
+          if (flat[i].type === "msg") offsets.push(posIndex[i]);
+        }
+        if (!offsets.length) return;
+        // The "current" message is the first one at or below the viewport top
+        let curIdx = offsets.findIndex(o => o >= cur - 4);
+        if (curIdx < 0) curIdx = offsets.length - 1;
+        const targetIdx = dir === "down"
+          ? Math.min(offsets.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        const top = Math.max(0, offsets[targetIdx] - 4);
+        el.scrollTo({ top, behavior: "smooth" });
+      }, [flat, posIndex]);
+
+      // Jump one date (day) at a time
+      const navByDate = useCallback(dir => {
+        if (!listRef.current || !flat.length) return;
+        const el = listRef.current;
+        const cur = el.scrollTop;
+        const offsets = [];
+        for (let i = 0; i < flat.length; i++) {
+          if (flat[i].type === "date") offsets.push(posIndex[i]);
+        }
+        if (!offsets.length) return;
+        let curIdx = offsets.findIndex(o => o >= cur - 4);
+        if (curIdx < 0) curIdx = offsets.length - 1;
+        const targetIdx = dir === "down"
+          ? Math.min(offsets.length - 1, curIdx + 1)
+          : Math.max(0, curIdx - 1);
+        const top = Math.max(0, offsets[targetIdx]);
+        el.scrollTo({ top, behavior: "smooth" });
+      }, [flat, posIndex]);
+
+      // Global keyboard navigation: arrow keys = message, mod+arrow = date
+      useEffect(() => {
+        const onKey = e => {
+          if (lightboxUrl || pending) return;
+          const tag = (e.target && e.target.tagName) || "";
+          if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+          if (e.altKey || e.shiftKey) return;
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            if (e.metaKey || e.ctrlKey) navByDate("down");
+            else navByMsg("down");
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            if (e.metaKey || e.ctrlKey) navByDate("up");
+            else navByMsg("up");
+          }
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [navByMsg, navByDate, lightboxUrl, pending]);
+
+      const markers = useMemo(() => {
+        if (sh <= 0) return [];
+        return [...hl].map(fid => {
+          const off = posByFid[fid];
+          if (off == null) return null;
+          return { fid, pos: (off/sh) * ch };
+        }).filter(Boolean);
+      }, [hl, posByFid, sh, ch]);
+
+      const setFsS = d => setFs(p => { const n = Math.max(10, Math.min(24, p+d)); ls.set(K("fs"), String(n)); return n; });
+
+      const onFileUpload = useCallback(e => {
+        const f = e.target.files[0]; if (!f) return;
+        e.target.value = "";
+        handleFile(f);
+      }, [handleFile]);
+
+      // ─────────────────────────────────────────────
+      // Render
+      // ─────────────────────────────────────────────
+      if (loading) return <div className="loading">저장된 대화를 불러오는 중...</div>;
+
+      const lastDate = dates[dates.length-1] || "";
+
+      return (
+        <LightboxContext.Provider value={setLightboxUrl}>
+          <div style={{height:"100vh",background:"#0f172a",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+            {processing && <ProgressBar {...processing} />}
+            {lightboxUrl && <Lightbox url={lightboxUrl} onClose={()=>setLightboxUrl(null)} />}
+            {pending && <MergeDialog onMerge={onMerge} onReplace={onReplace} onCancel={()=>setPending(null)} newCount={pending.newMsgs.length} existCount={pending.existMsgs.length} attachCount={pending.attachEntries?pending.attachEntries.length:0} />}
+            <StatBanner stats={stats} onClose={()=>setStats(null)} />
+
+            {/* Header */}
+            <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"8px 14px",display:"flex",alignItems:"center",gap:10,flexShrink:0,flexWrap:"wrap",minHeight:48}}>
+              <span style={{fontSize:14,fontWeight:700,color:"#a78bfa",letterSpacing:"-0.3px"}}>📢 주식부자 공지방</span>
+              <label style={{...BS,display:"inline-flex",alignItems:"center",gap:4,marginLeft:"auto"}}>
+                📂 CSV / TXT / ZIP 업로드
+                <input type="file" accept=".csv,.txt,.zip" onChange={onFileUpload} style={{display:"none"}} />
+              </label>
+            </div>
+
+            {(!msgs || msgs.length === 0) ? (
+              <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"#e2e8f0"}}>
+                <div style={{textAlign:"center",padding:40,maxWidth:460,background:"#1e293b",borderRadius:14,boxShadow:"0 4px 30px rgba(0,0,0,0.4)",border:"1px solid #334155"}}>
+                  <div style={{fontSize:50,marginBottom:14}}>📢</div>
+                  <h2 style={{fontSize:18,fontWeight:700,marginBottom:8,color:"#e2e8f0"}}>주식부자 공지방</h2>
+                  <p style={{color:"#94a3b8",marginBottom:8,fontSize:12,lineHeight:1.8}}>대화 내용이 아직 없습니다.<br/>상단의 📂 업로드 버튼으로 카카오톡 export 파일을 추가하세요.</p>
+                  <div style={{background:"#422006",border:"1px solid #92400e",borderRadius:8,padding:"10px 14px",marginTop:14,fontSize:11,color:"#fde68a",lineHeight:1.7,textAlign:"left"}}>
+                    💡 <strong>ZIP 업로드:</strong> 텍스트(.txt/.csv) + 이미지/PDF/문서가 함께 들어있는 ZIP을 올리면 첨부가 자동 매칭됩니다.
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <React.Fragment>
+                {/* Toolbar */}
+                <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"6px 14px",display:"flex",alignItems:"center",gap:8,flexShrink:0,flexWrap:"wrap",minHeight:42}}>
+                  <span style={{fontSize:11,color:"#94a3b8"}}>
+                    {`${msgs.length.toLocaleString()}개 · ~${lastDate}`}
+                  </span>
+                  <span style={{color:"#475569"}}>│</span>
+                  <select onChange={e=>{if(!e.target.value)return;scrollToDate(e.target.value);e.target.value="";}} style={{...BS,padding:"4px 8px"}}>
+                    <option value="">📅 날짜 이동</option>
+                    {dates.map(d=><option key={d} value={d}>{d}</option>)}
+                  </select>
+                  <div style={{display:"flex",alignItems:"center",gap:4}}>
+                    <button style={BS} onClick={()=>setFsS(-1)}>A−</button>
+                    <span style={{fontSize:12,color:"#94a3b8",minWidth:22,textAlign:"center",fontWeight:600}}>{fs}</span>
+                    <button style={BS} onClick={()=>setFsS(1)}>A+</button>
+                  </div>
+                  <span style={{color:"#475569"}}>│</span>
+                  <div style={{display:"flex",alignItems:"center",gap:4}} title="대화 이동: ↑/↓ &#10;날짜 이동: Cmd(또는 Ctrl)+↑/↓">
+                    <button style={BS} onClick={()=>navByMsg("up")} title="이전 대화 (↑)">↑</button>
+                    <button style={BS} onClick={()=>navByMsg("down")} title="다음 대화 (↓)">↓</button>
+                    <button style={BS} onClick={()=>navByDate("up")} title="이전 날짜 (Cmd/Ctrl+↑)">⇞</button>
+                    <button style={BS} onClick={()=>navByDate("down")} title="다음 날짜 (Cmd/Ctrl+↓)">⇟</button>
+                  </div>
+                  <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+                    <span style={{fontSize:11,color:hl.size>0?"#fbbf24":"#64748b",fontWeight:700}}>✏ {hl.size}개</span>
+                    <button style={BS} onClick={()=>navHL("p")}>↑ 이전</button>
+                    <button style={BS} onClick={()=>navHL("n")}>이후 ↓</button>
+                  </div>
+                </div>
+
+                {/* Body */}
+                <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+                  <div id="clist" ref={listRef} style={{flex:1,overflowY:"scroll",padding:"8px 0 24px",scrollbarWidth:"none",position:"relative"}}>
+                    <div className="clist-inner">
+                      <VirtualList flat={flat} posIndex={posIndex} totalH={totalH} hl={hl} fs={fs} onHL={toggleHL} listRef={listRef} onScroll={onScroll} onMeasure={onMeasure} />
+                    </div>
+                  </div>
+                  <div ref={trackRef} onClick={onTC} style={{width:SB_W,flexShrink:0,background:"#1e293b",borderLeft:"1px solid #334155",position:"relative",cursor:"pointer",userSelect:"none"}}>
+                    <div onMouseDown={onTD} style={{position:"absolute",left:3,right:3,top:tt,height:th,background:"#475569",borderRadius:4,cursor:"ns-resize",zIndex:2}} />
+                    {markers.map(({fid,pos}) => (
+                      <div key={fid} onClick={e=>{e.stopPropagation();scrollToFid(fid);}} style={{position:"absolute",left:1,right:1,top:Math.max(0,pos-1),height:4,background:"#fbbf24",borderRadius:2,zIndex:3,cursor:"pointer",boxShadow:"0 0 4px rgba(251,191,36,0.7)"}} />
+                    ))}
+                  </div>
+                </div>
+              </React.Fragment>
+            )}
+          </div>
+        </LightboxContext.Provider>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  })();
+  </script>
+</body>
+</html>
