@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>주식부자 공지방 뷰어 v25</title>
+  <title>주식부자 공지방 뷰어 v26</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; background: #0f172a; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #e2e8f0; }
@@ -155,6 +155,16 @@
       if (!d) return "";
       return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
     };
+    // 요일 포함 날짜 라벨: "2025.05.07" → "2025.05.07 (수)"
+    const DOW_KO = ["일","월","화","수","목","금","토"];
+    function fmtDateLabel(dk) {
+      if (!dk) return "";
+      const parts = dk.split(".");
+      if (parts.length !== 3) return dk;
+      const date = new Date(+parts[0], +parts[1]-1, +parts[2]);
+      if (isNaN(date)) return dk;
+      return `${dk} (${DOW_KO[date.getDay()]})`;
+    }
     const minuteKeyOf = d => d ? `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}` : null;
 
     const makeFid = (user, t, msg) => `${t}|${user}|${msg.slice(0,50)}`;
@@ -716,7 +726,7 @@
                 return (
                   <MeasuredRow key={item.key} itemKey={item.key} onMeasure={onMeasure}>
                     <div style={{height: DATE_H, display:"flex", alignItems:"center", justifyContent:"center"}}>
-                      <span style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:"3px 18px",fontSize:11,color:"#94a3b8",fontWeight:600,boxShadow:"none"}}>{item.dk}</span>
+                      <span style={{background:"#1e293b",border:"1px solid #334155",borderRadius:16,padding:"3px 18px",fontSize:11,color:"#94a3b8",fontWeight:600,boxShadow:"none"}}>{fmtDateLabel(item.dk)}</span>
                     </div>
                   </MeasuredRow>
                 );
@@ -1407,12 +1417,12 @@
                 {/* Toolbar */}
                 <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"6px 14px",display:"flex",alignItems:"center",gap:8,flexShrink:0,flexWrap:"wrap",minHeight:42}}>
                   <span style={{fontSize:11,color:"#94a3b8"}}>
-                    {`${msgs.length.toLocaleString()}개 · ~${lastDate}`}
+                    {`${msgs.length.toLocaleString()}개 · ~${fmtDateLabel(lastDate)}`}
                   </span>
                   <span style={{color:"#475569"}}>│</span>
                   <select onChange={e=>{if(!e.target.value)return;scrollToDate(e.target.value);e.target.value="";}} style={{...BS,padding:"4px 8px"}}>
                     <option value="">📅 날짜 이동</option>
-                    {dates.map(d=><option key={d} value={d}>{d}</option>)}
+                    {[...dates].reverse().map(d=><option key={d} value={d}>{fmtDateLabel(d)}</option>)}
                   </select>
                   <div style={{display:"flex",alignItems:"center",gap:4}}>
                     <button style={BS} onClick={()=>setFsS(-1)}>A−</button>
@@ -1454,7 +1464,7 @@
                   {currentDate && (
                     <div style={{position:"absolute", top:8, left:0, right:SB_W, display:"flex", justifyContent:"center", pointerEvents:"none", zIndex:5}}>
                       <div style={{background:"rgba(15,23,42,0.85)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", border:"1px solid #475569", borderRadius:16, padding:"4px 16px", fontSize:11.5, fontWeight:700, color:"#e2e8f0", boxShadow:"0 4px 14px rgba(0,0,0,0.35)", letterSpacing:"-0.2px"}}>
-                        📅 {currentDate}
+                        📅 {fmtDateLabel(currentDate)}
                       </div>
                     </div>
                   )}
