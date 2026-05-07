@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>주식부자 공지방 뷰어 v24</title>
+  <title>주식부자 공지방 뷰어 v25</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; background: #0f172a; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #e2e8f0; }
@@ -153,8 +153,7 @@
     const toDK = d => !d?"" : `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,"0")}.${String(d.getDate()).padStart(2,"0")}`;
     const toTS = d => {
       if (!d) return "";
-      const h=d.getHours(), mn=d.getMinutes();
-      return `${h<12?"오전":"오후"} ${h===0?12:h>12?h-12:h}:${String(mn).padStart(2,"0")}`;
+      return `${String(d.getHours()).padStart(2,"0")}:${String(d.getMinutes()).padStart(2,"0")}`;
     };
     const minuteKeyOf = d => d ? `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}` : null;
 
@@ -375,7 +374,13 @@
       try {
         const data = await idbGet(MSG_STORE, ROOM_ID);
         if (data && Array.isArray(data)) {
-          return data.filter(m => !isSystemMsg(m.msg)).map(m => ({ ...m, user: normUser(m.user) }));
+          return data.filter(m => !isSystemMsg(m.msg)).map(m => {
+            const u = normUser(m.user);
+            // 기존에 저장된 메시지는 "오전/오후" 형식의 ts를 가지고 있을 수 있음.
+            // _t(타임스탬프)가 있으면 거기서 24시간 형식 ts를 새로 계산해 덮어씀.
+            const ts = m._t ? toTS(new Date(m._t)) : m.ts;
+            return { ...m, user: u, ts };
+          });
         }
       } catch(e) { console.warn("로드 실패:", e); }
       return null;
@@ -1291,6 +1296,27 @@
         }).filter(Boolean);
       }, [hl, posByFid, sh, ch]);
 
+      // 현재 보고 있는 날짜 (sticky 헤더용) - 스크롤 위치 기준 가장 최근에 나온 date 섹션
+      const currentDate = useMemo(() => {
+        if (!flat || !flat.length) return null;
+        const target = (scrollSt.st || 0) + 4; // 작은 버퍼: 날짜 구분선이 막 위로 사라진 직후도 그 날짜 유지
+        // 이진 탐색: posIndex[i] <= target 인 가장 큰 i
+        let lo = 0, hi = flat.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (posIndex[mid] <= target) lo = mid + 1; else hi = mid;
+        }
+        let idx = lo - 1;
+        // 그 위치에서 뒤로 가장 가까운 date 항목 찾기
+        while (idx >= 0 && flat[idx].type !== "date") idx--;
+        if (idx < 0) {
+          // 첫 화면(스크롤 0 부근) — 가장 첫 date 반환
+          const first = flat.find(f => f.type === "date");
+          return first ? first.dk : null;
+        }
+        return flat[idx].dk;
+      }, [flat, posIndex, scrollSt.st]);
+
       const setFsS = d => setFs(p => { const n = Math.max(10, Math.min(24, p+d)); ls.set(K("fs"), String(n)); return n; });
 
       const onFileUpload = useCallback(e => {
@@ -1423,7 +1449,15 @@
                 </div>
 
                 {/* Body */}
-                <div style={{flex:1,display:"flex",overflow:"hidden"}}>
+                <div style={{flex:1,display:"flex",overflow:"hidden",position:"relative"}}>
+                  {/* 스크롤 중 현재 보고 있는 날짜를 상단에 고정 표시 */}
+                  {currentDate && (
+                    <div style={{position:"absolute", top:8, left:0, right:SB_W, display:"flex", justifyContent:"center", pointerEvents:"none", zIndex:5}}>
+                      <div style={{background:"rgba(15,23,42,0.85)", backdropFilter:"blur(6px)", WebkitBackdropFilter:"blur(6px)", border:"1px solid #475569", borderRadius:16, padding:"4px 16px", fontSize:11.5, fontWeight:700, color:"#e2e8f0", boxShadow:"0 4px 14px rgba(0,0,0,0.35)", letterSpacing:"-0.2px"}}>
+                        📅 {currentDate}
+                      </div>
+                    </div>
+                  )}
                   <div id="clist" ref={listRef} className={ttsSelectMode ? "tts-select-mode" : ""} style={{flex:1,overflowY:"scroll",padding:"8px 0 24px",scrollbarWidth:"none",position:"relative"}}>
                     <div className="clist-inner">
                       <VirtualList flat={flat} posIndex={posIndex} totalH={totalH} hl={hl} fs={fs} onHL={toggleHL} listRef={listRef} onScroll={onScroll} onMeasure={onMeasure}
