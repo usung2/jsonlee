@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>주식부자 공지방 뷰어 v23</title>
+  <title>주식부자 공지방 뷰어 v24</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; height: 100%; background: #0f172a; font-family: 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif; color: #e2e8f0; }
@@ -15,6 +15,15 @@
     @media (max-width: 600px) { .clist-inner { padding: 0 12px; } }
     select, button, input { color-scheme: dark; }
     select option { background: #1e293b; color: #e2e8f0; }
+    /* TTS 선택 모드: 메시지에 호버하면 강조 */
+    .tts-select-mode .msg-row { cursor: pointer !important; transition: transform .12s ease, box-shadow .12s ease; }
+    .tts-select-mode .msg-row:hover { transform: translateX(2px); box-shadow: 0 0 0 2px #22d3ee, 0 4px 14px rgba(34,211,238,0.25); }
+    /* 현재 읽고 있는 메시지 펄스 강조 */
+    @keyframes ttsPulse {
+      0%, 100% { box-shadow: 0 0 0 2px #22d3ee, 0 0 18px rgba(34,211,238,0.45); }
+      50%      { box-shadow: 0 0 0 2px #22d3ee, 0 0 28px rgba(34,211,238,0.75); }
+    }
+    .tts-now-playing { animation: ttsPulse 1.4s ease-in-out infinite; }
   </style>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
@@ -514,11 +523,78 @@
       return lines.join("\n");
     }
 
-    function Msg({ m, isHL, onHL, fs }) {
+    // ═══════════════════════════════════════════════════════
+    // TTS
+    // ═══════════════════════════════════════════════════════
+    const TTS_TARGET_USERS = ["채상욱", "회색인간"];
+
+    // 한 메시지의 텍스트를 TTS용으로 정제
+    function cleanForTTS(text) {
+      if (!text) return "";
+      let t = text;
+      // URL → "링크" (긴 URL을 글자 단위로 읽지 않도록)
+      t = t.replace(/https?:\/\/\S+/gi, " 링크 ");
+      // 다중 공백/개행 정리
+      t = t.replace(/\s+/g, " ").trim();
+      return t;
+    }
+
+    // 시작 메시지(fid)부터 끝까지 TTS 큐 생성
+    // - 채상욱 / 회색인간 메시지만 포함
+    // - 텍스트가 비어있는(이미지/파일만 있는) 메시지는 제외
+    // - 연속해서 같은 화자가 말하면 두 번째 메시지부터 화자명 생략
+    function buildTTSQueue(msgs, startFid) {
+      if (!msgs || !msgs.length) return [];
+      const startIdx = msgs.findIndex(m => m.fid === startFid);
+      if (startIdx < 0) return [];
+      const queue = [];
+      let lastUser = null;
+      for (let i = startIdx; i < msgs.length; i++) {
+        const m = msgs[i];
+        if (!TTS_TARGET_USERS.includes(m.user)) continue;
+        const cleaned = cleanForTTS(displayText(m));
+        if (!cleaned) continue;
+        const speakerPrefix = (m.user === lastUser) ? "" : (m.user + ". ");
+        queue.push({ fid: m.fid, user: m.user, text: speakerPrefix + cleaned, body: cleaned });
+        lastUser = m.user;
+      }
+      return queue;
+    }
+
+    // 긴 텍스트를 TTS 청크로 분할 (Chrome의 ~15초 끊김 버그 회피용)
+    // 문장 부호 기준으로 자르고, 그래도 길면 강제로 자른다.
+    function splitForTTS(text, maxLen = 180) {
+      if (!text) return [];
+      if (text.length <= maxLen) return [text];
+      const out = [];
+      // 1차: 문장부호 기준 분할
+      const sentences = text.split(/(?<=[.!?。．！？])\s+|\n+/);
+      let buf = "";
+      for (const s of sentences) {
+        if (!s) continue;
+        if ((buf + " " + s).trim().length <= maxLen) {
+          buf = (buf ? buf + " " : "") + s;
+        } else {
+          if (buf) out.push(buf);
+          if (s.length <= maxLen) {
+            buf = s;
+          } else {
+            // 문장 자체가 너무 길면 maxLen 단위로 강제 절단
+            for (let i = 0; i < s.length; i += maxLen) out.push(s.slice(i, i + maxLen));
+            buf = "";
+          }
+        }
+      }
+      if (buf) out.push(buf);
+      return out.filter(Boolean);
+    }
+
+    function Msg({ m, isHL, onHL, fs, ttsSelectMode, ttsNowPlaying, onTTSPick }) {
       const c = UCFG[m.user]||DCFG;
       const text = displayText(m);
       const hasImages = m.images && m.images.length > 0;
       const hasFiles = m.files && m.files.length > 0;
+      const isTarget = TTS_TARGET_USERS.includes(m.user);
       const baseStyle = {
         marginBottom:4, padding:"10px 14px",
         background: isHL ? "rgba(245, 158, 11, 0.12)" : c.bg,
@@ -528,13 +604,36 @@
       };
       // Subtle vertical accent line on the left for featured speakers
       if (c.accent && !isHL) baseStyle.borderLeft = `3px solid ${c.accent}`;
+      // TTS 선택 모드: 비대상 화자는 흐리게 (클릭하면 다음 대상부터 재생됨을 시사)
+      if (ttsSelectMode && !isTarget) baseStyle.opacity = 0.55;
+
+      const handleClick = (e) => {
+        if (!ttsSelectMode) return;
+        // 텍스트 선택 후 클릭한 경우는 무시
+        const sel = window.getSelection && window.getSelection();
+        if (sel && sel.toString && sel.toString().length > 0) return;
+        e.stopPropagation();
+        onTTSPick && onTTSPick(m.fid);
+      };
+      const handleDblClick = () => {
+        if (ttsSelectMode) return; // TTS 선택 모드에서는 형광펜 비활성화
+        const s = window.getSelection(); s && s.removeAllRanges();
+        onHL(m.fid);
+      };
+
+      const className = "msg-row" + (ttsNowPlaying ? " tts-now-playing" : "");
+      const titleAttr = ttsSelectMode
+        ? (isTarget ? "클릭하면 여기부터 TTS 재생" : "이 위치 이후의 채상욱/회색인간 메시지부터 재생")
+        : "더블클릭으로 형광펜";
+
       return (
-        <div onDoubleClick={()=>{const s=window.getSelection();s&&s.removeAllRanges();onHL(m.fid);}} title="더블클릭으로 형광펜" style={baseStyle}>
+        <div onClick={handleClick} onDoubleClick={handleDblClick} className={className} title={titleAttr} style={baseStyle}>
           <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:5,flexWrap:"wrap"}}>
             <span style={{background:c.tb,color:c.tc,borderRadius:4,padding:"2px 9px",fontSize:11,fontWeight:700}}>{m.user}</span>
             <span style={{fontSize:11,color:"#94a3b8"}}>{m.ts}</span>
             {hasImages && <span style={{fontSize:10,color:"#cbd5e1",background:"#334155",borderRadius:3,padding:"1px 6px"}}>📷 {m.images.length}</span>}
             {hasFiles && <span style={{fontSize:10,color:"#cbd5e1",background:"#334155",borderRadius:3,padding:"1px 6px"}}>📎 {m.files.length}</span>}
+            {ttsNowPlaying && <span style={{fontSize:10,color:"#0e7490",background:"#22d3ee",borderRadius:3,padding:"1px 6px",fontWeight:700}}>🔊 재생 중</span>}
             {isHL&&<span style={{marginLeft:"auto",color:"#fbbf24",fontSize:11,fontWeight:700}}>✏ 형광펜</span>}
           </div>
           {text && <div style={{fontSize:fs,lineHeight:1.75,color:"#e2e8f0",whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{text}</div>}
@@ -560,7 +659,7 @@
       return <div ref={ref}>{children}</div>;
     }
 
-    function VirtualList({ flat, posIndex, totalH, hl, fs, onHL, listRef, onScroll, onMeasure }) {
+    function VirtualList({ flat, posIndex, totalH, hl, fs, onHL, listRef, onScroll, onMeasure, ttsSelectMode, ttsCurrentFid, onTTSPick }) {
       const [scrollTop, setScrollTop] = useState(0);
       const [viewH, setViewH] = useState(600);
 
@@ -619,7 +718,10 @@
               }
               return (
                 <MeasuredRow key={item.key} itemKey={item.key} onMeasure={onMeasure}>
-                  <Msg m={item.m} isHL={hl.has(item.m.fid)} onHL={onHL} fs={fs} />
+                  <Msg m={item.m} isHL={hl.has(item.m.fid)} onHL={onHL} fs={fs}
+                       ttsSelectMode={ttsSelectMode}
+                       ttsNowPlaying={ttsCurrentFid === item.m.fid}
+                       onTTSPick={onTTSPick} />
                 </MeasuredRow>
               );
             })}
@@ -714,6 +816,169 @@
       const scrollRestored = useRef(false);
       const scrollSaveTimer = useRef(null);
 
+      // ─────────────────────────────────────────────
+      // TTS state
+      // ─────────────────────────────────────────────
+      const ttsSupported = typeof window !== "undefined" && "speechSynthesis" in window;
+      const [ttsSelectMode, setTtsSelectMode] = useState(false);
+      const [ttsState, setTtsState] = useState({ active:false, paused:false, idx:-1, total:0, fid:null });
+      const [ttsRate, setTtsRate] = useState(1.0);
+
+      const ttsQueueRef = useRef([]);          // [{fid,user,text,body}, ...]
+      const ttsIdxRef = useRef(0);
+      const ttsRateRef = useRef(1.0);
+      const ttsVoiceRef = useRef(null);
+      const ttsTokenRef = useRef(0);           // 취소 토큰: 무효 utterance의 onend가 다음 항목으로 진행하는 것을 차단
+      const ttsKeepAliveRef = useRef(null);    // Chrome ~15초 끊김 버그 회피
+
+      useEffect(() => { ttsRateRef.current = ttsRate; }, [ttsRate]);
+
+      // 한국어 음성 로드 (voices는 비동기로 로드됨)
+      useEffect(() => {
+        if (!ttsSupported) return;
+        const pickVoice = () => {
+          const voices = window.speechSynthesis.getVoices();
+          if (!voices || !voices.length) return;
+          // 한국어 음성 선호. 없으면 default voice.
+          const ko = voices.find(v => /^ko/i.test(v.lang)) || voices.find(v => /korean/i.test(v.name));
+          ttsVoiceRef.current = ko || null;
+        };
+        pickVoice();
+        window.speechSynthesis.onvoiceschanged = pickVoice;
+        return () => {
+          try { window.speechSynthesis.onvoiceschanged = null; } catch(e){}
+        };
+      }, [ttsSupported]);
+
+      // 청크를 순차 재생하고, 끝나면 다음 큐 항목으로
+      const playQueueAt = useCallback((i) => {
+        if (!ttsSupported) return;
+        const queue = ttsQueueRef.current;
+        if (i < 0 || i >= queue.length) {
+          // 종료
+          ttsTokenRef.current++;
+          try { window.speechSynthesis.cancel(); } catch(e){}
+          if (ttsKeepAliveRef.current) { clearInterval(ttsKeepAliveRef.current); ttsKeepAliveRef.current = null; }
+          setTtsState({ active:false, paused:false, idx:-1, total:queue.length, fid:null });
+          return;
+        }
+        const myToken = ++ttsTokenRef.current;
+        ttsIdxRef.current = i;
+        const item = queue[i];
+        setTtsState({ active:true, paused:false, idx:i, total:queue.length, fid:item.fid });
+
+        // 화면을 해당 메시지로 자동 스크롤
+        try {
+          const off = posByFidRef.current[item.fid];
+          if (off != null && listRef.current) {
+            listRef.current.scrollTo({ top: Math.max(0, off - 80), behavior: "smooth" });
+          }
+        } catch(e){}
+
+        // 메시지를 청크로 쪼개서 순차 재생
+        const chunks = splitForTTS(item.text, 180);
+        let ci = 0;
+        const speakChunk = () => {
+          if (ttsTokenRef.current !== myToken) return;
+          if (ci >= chunks.length) {
+            // 다음 큐 항목으로
+            playQueueAt(i + 1);
+            return;
+          }
+          const u = new SpeechSynthesisUtterance(chunks[ci]);
+          u.lang = "ko-KR";
+          u.rate = ttsRateRef.current || 1.0;
+          if (ttsVoiceRef.current) u.voice = ttsVoiceRef.current;
+          u.onend = () => {
+            if (ttsTokenRef.current !== myToken) return;
+            ci++;
+            speakChunk();
+          };
+          u.onerror = (ev) => {
+            // 'canceled'/'interrupted' 는 사용자 조작이므로 무시
+            if (ttsTokenRef.current !== myToken) return;
+            ci++;
+            speakChunk();
+          };
+          try { window.speechSynthesis.speak(u); } catch(e){}
+        };
+        speakChunk();
+      }, [ttsSupported]);
+
+      // posByFid 를 ref로도 노출 (playQueueAt 내부에서 stale closure 방지)
+      const posByFidRef = useRef({});
+
+      const ttsStop = useCallback(() => {
+        ttsTokenRef.current++;
+        try { window.speechSynthesis.cancel(); } catch(e){}
+        if (ttsKeepAliveRef.current) { clearInterval(ttsKeepAliveRef.current); ttsKeepAliveRef.current = null; }
+        ttsQueueRef.current = [];
+        ttsIdxRef.current = 0;
+        setTtsState({ active:false, paused:false, idx:-1, total:0, fid:null });
+        setTtsSelectMode(false);
+      }, []);
+
+      const ttsPauseToggle = useCallback(() => {
+        if (!ttsSupported) return;
+        const ss = window.speechSynthesis;
+        if (ss.paused) {
+          ss.resume();
+          setTtsState(s => ({ ...s, paused:false }));
+        } else if (ss.speaking) {
+          ss.pause();
+          setTtsState(s => ({ ...s, paused:true }));
+        }
+      }, [ttsSupported]);
+
+      const ttsNext = useCallback(() => {
+        const queue = ttsQueueRef.current;
+        if (!queue.length) return;
+        const next = Math.min(queue.length - 1, ttsIdxRef.current + 1);
+        ttsTokenRef.current++;
+        try { window.speechSynthesis.cancel(); } catch(e){}
+        setTimeout(() => playQueueAt(next), 30);
+      }, [playQueueAt]);
+
+      const ttsPrev = useCallback(() => {
+        if (!ttsQueueRef.current.length) return;
+        const prev = Math.max(0, ttsIdxRef.current - 1);
+        ttsTokenRef.current++;
+        try { window.speechSynthesis.cancel(); } catch(e){}
+        setTimeout(() => playQueueAt(prev), 30);
+      }, [playQueueAt]);
+
+      // 메시지 클릭 → 큐 생성 후 재생 시작
+      const ttsStartFromFid = useCallback((fid) => {
+        if (!ttsSupported || !msgs) return;
+        const queue = buildTTSQueue(msgs, fid);
+        if (!queue.length) {
+          alert("이 위치 이후에 채상욱/회색인간 메시지가 없습니다.");
+          return;
+        }
+        ttsQueueRef.current = queue;
+        ttsIdxRef.current = 0;
+        ttsTokenRef.current++;
+        try { window.speechSynthesis.cancel(); } catch(e){}
+        setTtsSelectMode(false);
+        // Chrome ~15초 끊김 버그 회피: speaking 중일 때 주기적으로 pause/resume
+        if (ttsKeepAliveRef.current) clearInterval(ttsKeepAliveRef.current);
+        ttsKeepAliveRef.current = setInterval(() => {
+          try {
+            const ss = window.speechSynthesis;
+            if (ss.speaking && !ss.paused) { ss.pause(); ss.resume(); }
+          } catch(e){}
+        }, 10000);
+        setTimeout(() => playQueueAt(0), 30);
+      }, [msgs, ttsSupported, playQueueAt]);
+
+      // 언마운트 시 정리
+      useEffect(() => {
+        return () => {
+          try { window.speechSynthesis.cancel(); } catch(e){}
+          if (ttsKeepAliveRef.current) { clearInterval(ttsKeepAliveRef.current); ttsKeepAliveRef.current = null; }
+        };
+      }, []);
+
       // Per-item measured heights (key -> height in px). Used to build an
       // accurate posIndex so virtual-list slice changes don't visually jump.
       const heightsRef = useRef(new Map());
@@ -796,6 +1061,9 @@
         }
         return { flat:f, posIndex:offs, totalH:offs[f.length], dates:ds, posByFid:fidPos };
       }, [msgs, posVersion]);
+
+      // playQueueAt 클로저가 항상 최신 posByFid를 참조하도록 ref에 동기화
+      useEffect(() => { posByFidRef.current = posByFid; }, [posByFid]);
 
       // Restore scroll position once
       useEffect(() => {
@@ -988,6 +1256,17 @@
           if (lightboxUrl || pending) return;
           const tag = (e.target && e.target.tagName) || "";
           if (/^(INPUT|TEXTAREA|SELECT)$/.test(tag)) return;
+          // ESC: TTS 선택 모드 / 재생 중지
+          if (e.key === "Escape") {
+            if (ttsState.active) { e.preventDefault(); ttsStop(); return; }
+            if (ttsSelectMode) { e.preventDefault(); setTtsSelectMode(false); return; }
+          }
+          // Space: TTS 재생/일시정지 토글 (재생 중일 때만)
+          if (e.key === " " && ttsState.active) {
+            e.preventDefault();
+            ttsPauseToggle();
+            return;
+          }
           if (e.altKey || e.shiftKey) return;
           if (e.key === "ArrowDown") {
             e.preventDefault();
@@ -1001,7 +1280,7 @@
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-      }, [navByMsg, navByDate, lightboxUrl, pending]);
+      }, [navByMsg, navByDate, lightboxUrl, pending, ttsState.active, ttsSelectMode, ttsStop, ttsPauseToggle]);
 
       const markers = useMemo(() => {
         if (sh <= 0) return [];
@@ -1034,6 +1313,48 @@
             {lightboxUrl && <Lightbox url={lightboxUrl} onClose={()=>setLightboxUrl(null)} />}
             {pending && <MergeDialog onMerge={onMerge} onReplace={onReplace} onCancel={()=>setPending(null)} newCount={pending.newMsgs.length} existCount={pending.existMsgs.length} attachCount={pending.attachEntries?pending.attachEntries.length:0} />}
             <StatBanner stats={stats} onClose={()=>setStats(null)} />
+
+            {/* TTS 선택 모드 안내 배너 */}
+            {ttsSelectMode && !ttsState.active && (
+              <div style={{position:"fixed",top:64,left:"50%",transform:"translateX(-50%)",background:"#0e7490",color:"#fff",padding:"8px 16px",borderRadius:20,fontSize:12,zIndex:120,boxShadow:"0 4px 14px rgba(8,145,178,0.4)",display:"flex",alignItems:"center",gap:10}}>
+                <span>🎯 시작할 메시지를 클릭하세요 (채상욱 / 회색인간만 읽음)</span>
+                <button onClick={()=>setTtsSelectMode(false)} style={{background:"rgba(255,255,255,0.2)",border:"none",color:"#fff",borderRadius:4,padding:"3px 8px",fontSize:11,cursor:"pointer",fontWeight:600}}>취소</button>
+              </div>
+            )}
+
+            {/* TTS 재생 컨트롤 바 */}
+            {ttsState.active && (
+              <div style={{position:"fixed",bottom:16,left:"50%",transform:"translateX(-50%)",background:"#0f172a",border:"1px solid #22d3ee",borderRadius:12,padding:"10px 14px",zIndex:120,boxShadow:"0 8px 28px rgba(34,211,238,0.25)",display:"flex",alignItems:"center",gap:8,maxWidth:"95vw",flexWrap:"wrap"}}>
+                <span style={{fontSize:11,color:"#22d3ee",fontWeight:700,minWidth:0}}>
+                  🔊 {ttsState.idx+1} / {ttsState.total}
+                  {ttsQueueRef.current[ttsState.idx] && (
+                    <span style={{color:"#94a3b8",fontWeight:500,marginLeft:8}}>
+                      · {ttsQueueRef.current[ttsState.idx].user}
+                    </span>
+                  )}
+                </span>
+                <button style={BS} onClick={ttsPrev} title="이전 메시지">⏮</button>
+                <button style={{...BS, background:"#22d3ee", color:"#0f172a", borderColor:"#22d3ee", fontWeight:700}} onClick={ttsPauseToggle} title={ttsState.paused?"재생":"일시정지"}>
+                  {ttsState.paused ? "▶ 재생" : "⏸ 일시정지"}
+                </button>
+                <button style={BS} onClick={ttsNext} title="다음 메시지">⏭</button>
+                <span style={{color:"#475569"}}>│</span>
+                <label style={{fontSize:11,color:"#94a3b8",display:"flex",alignItems:"center",gap:4}}>
+                  속도
+                  <select value={ttsRate} onChange={e=>setTtsRate(parseFloat(e.target.value))} style={{...BS,padding:"3px 6px"}}>
+                    <option value="0.7">0.7x</option>
+                    <option value="0.85">0.85x</option>
+                    <option value="1">1.0x</option>
+                    <option value="1.15">1.15x</option>
+                    <option value="1.3">1.3x</option>
+                    <option value="1.5">1.5x</option>
+                    <option value="1.75">1.75x</option>
+                    <option value="2">2.0x</option>
+                  </select>
+                </label>
+                <button style={{...BS, color:"#fca5a5", borderColor:"#7f1d1d"}} onClick={ttsStop} title="정지">⏹ 정지</button>
+              </div>
+            )}
 
             {/* Header */}
             <div style={{background:"#1e293b",borderBottom:"1px solid #334155",padding:"8px 14px",display:"flex",alignItems:"center",gap:10,flexShrink:0,flexWrap:"wrap",minHeight:48}}>
@@ -1079,6 +1400,21 @@
                     <button style={BS} onClick={()=>navByDate("up")} title="이전 날짜 (Cmd/Ctrl+↑)">⇞</button>
                     <button style={BS} onClick={()=>navByDate("down")} title="다음 날짜 (Cmd/Ctrl+↓)">⇟</button>
                   </div>
+                  <span style={{color:"#475569"}}>│</span>
+                  {/* TTS */}
+                  <div style={{display:"flex",alignItems:"center",gap:4}} title="채상욱/회색인간 메시지만 읽어줍니다">
+                    <button
+                      style={{...BS, background: ttsSelectMode ? "#06b6d4" : (ttsState.active ? "#0891b2" : BS.background), color: (ttsSelectMode||ttsState.active) ? "#fff" : BS.color, borderColor: (ttsSelectMode||ttsState.active) ? "#22d3ee" : BS.border}}
+                      onClick={() => {
+                        if (!ttsSupported) { alert("이 브라우저는 음성합성(TTS)을 지원하지 않습니다."); return; }
+                        if (ttsState.active) { ttsStop(); return; }
+                        setTtsSelectMode(v => !v);
+                      }}
+                      title={ttsState.active ? "TTS 정지" : (ttsSelectMode ? "선택 모드 취소" : "TTS 시작 위치 선택")}
+                    >
+                      {ttsState.active ? "⏹ TTS" : (ttsSelectMode ? "✕ 선택중" : "🔊 TTS")}
+                    </button>
+                  </div>
                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
                     <span style={{fontSize:11,color:hl.size>0?"#fbbf24":"#64748b",fontWeight:700}}>✏ {hl.size}개</span>
                     <button style={BS} onClick={()=>navHL("p")}>↑ 이전</button>
@@ -1088,9 +1424,12 @@
 
                 {/* Body */}
                 <div style={{flex:1,display:"flex",overflow:"hidden"}}>
-                  <div id="clist" ref={listRef} style={{flex:1,overflowY:"scroll",padding:"8px 0 24px",scrollbarWidth:"none",position:"relative"}}>
+                  <div id="clist" ref={listRef} className={ttsSelectMode ? "tts-select-mode" : ""} style={{flex:1,overflowY:"scroll",padding:"8px 0 24px",scrollbarWidth:"none",position:"relative"}}>
                     <div className="clist-inner">
-                      <VirtualList flat={flat} posIndex={posIndex} totalH={totalH} hl={hl} fs={fs} onHL={toggleHL} listRef={listRef} onScroll={onScroll} onMeasure={onMeasure} />
+                      <VirtualList flat={flat} posIndex={posIndex} totalH={totalH} hl={hl} fs={fs} onHL={toggleHL} listRef={listRef} onScroll={onScroll} onMeasure={onMeasure}
+                        ttsSelectMode={ttsSelectMode}
+                        ttsCurrentFid={ttsState.fid}
+                        onTTSPick={ttsStartFromFid} />
                     </div>
                   </div>
                   <div ref={trackRef} onClick={onTC} style={{width:SB_W,flexShrink:0,background:"#1e293b",borderLeft:"1px solid #334155",position:"relative",cursor:"pointer",userSelect:"none"}}>
