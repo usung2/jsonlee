@@ -355,10 +355,12 @@ function rDl(){
     cnt[m.date]=(cnt[m.date]||0)+1;
     if(S.bm.has(m.id))bmCnt[m.date]=(bmCnt[m.date]||0)+1;
   });
+  const dayLabels=['일','월','화','수','목','금','토'];
   document.getElementById('dl').innerHTML=S.dates.map(d=>{
-    const[,mo,dd]=d.split('-');
+    const[y,mo,dd]=d.split('-');
+    const dow=dayLabels[new Date(+y,+mo-1,+dd).getDay()];
     const bm=bmCnt[d]?`<span class="dbm">★${bmCnt[d]}</span>`:'';
-    return `<div class="di${d===S.sel?' sel':''}" data-d="${d}"><span>${+mo}월 ${+dd}일</span><span class="di-r">${bm}<span class="dc">${cnt[d]||0}</span></span></div>`;
+    return `<div class="di${d===S.sel?' sel':''}" data-d="${d}"><span>${+mo}월 ${+dd}일 (${dow})</span><span class="di-r">${bm}<span class="dc">${cnt[d]||0}</span></span></div>`;
   }).join('');
   document.querySelectorAll('.di').forEach(el=>el.onclick=()=>selD(el.dataset.d));
 }
