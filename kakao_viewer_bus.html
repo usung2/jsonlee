@@ -2,7 +2,7 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD Gothic Neo','Malgun Gothic','맑은 고딕',-apple-system,BlinkMacSystemFont,sans-serif;color:#e2e8f0}
 #ar{display:flex;height:100vh;width:100vw;background:#0f172a;position:relative;overflow:hidden}
-#sb{width:300px;flex-shrink:0;background:#1e293b;border-right:1px solid #334155;display:flex;flex-direction:column;overflow:hidden}
+#sb{width:230px;flex-shrink:0;background:#1e293b;border-right:1px solid #334155;display:flex;flex-direction:column;overflow:hidden}
 .sb-hd{padding:14px 14px;border-bottom:1px solid #334155;font-size:14px;font-weight:600;color:#f1f5f9;display:flex;align-items:center;gap:6px}
 .sb-sc{padding:12px 12px;border-bottom:1px solid #334155}
 .sb-lb{font-size:11px;color:#64748b;letter-spacing:.05em;margin-bottom:8px;text-transform:uppercase;font-weight:600}
@@ -31,6 +31,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 .bm-btn-md:hover{background:#2e1065;border-color:#8b5cf6;color:#ddd6fe}
 #bmCnt{font-size:11px;color:#64748b;margin-top:8px;text-align:center}
 #bmCnt .num{color:#fbbf24;font-weight:600}
+#bmCnt .dirty{color:#f87171;margin-left:4px}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e293b;color:#f1f5f9;padding:10px 18px;border-radius:8px;border:1px solid #475569;font-size:13px;z-index:1000;box-shadow:0 4px 20px rgba(0,0,0,.4);opacity:0;transition:opacity .2s;pointer-events:none}
 .toast.sh{opacity:1}
 .dl-wrap{flex:1;overflow:hidden;display:flex;flex-direction:column;min-height:0}
@@ -39,16 +40,18 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 #dl::-webkit-scrollbar{width:6px}
 #dl::-webkit-scrollbar-track{background:transparent}
 #dl::-webkit-scrollbar-thumb{background:#334155;border-radius:3px}
-.di{padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:#cbd5e1;display:flex;justify-content:space-between;align-items:center;transition:background .1s;margin-bottom:1px}
+.di{padding:6px 10px;border-radius:6px;cursor:pointer;font-size:13px;color:#cbd5e1;display:flex;justify-content:space-between;align-items:center;transition:background .1s;margin-bottom:1px;gap:6px}
 .di:hover{background:#334155}
 .di.sel{background:#8b5cf6;color:#fff}
-.di.sel .dc{color:rgba(255,255,255,.8)}
-.dc{font-size:11px;color:#64748b}
+.di.sel .dc{color:rgba(255,255,255,.85)}
+.di.sel .dbm{background:rgba(255,255,255,.25);color:#fff}
+.di-r{display:flex;align-items:center;gap:5px;flex-shrink:0}
+.dbm{font-size:10px;color:#fbbf24;font-weight:700;background:rgba(245,158,11,.18);padding:1px 5px;border-radius:3px;line-height:1.4}
+.dc{font-size:11px;color:#64748b;font-variant-numeric:tabular-nums}
 #cm{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#0f172a;min-width:0}
 #chd{padding:12px 18px;border-bottom:1px solid #334155;background:#1e293b;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#f1f5f9;flex-shrink:0;z-index:1}
 #chs{font-size:12px;color:#94a3b8;font-weight:400}
-/* 오른쪽엔 스크롤바가 있으므로 우측 여백을 조금 더 넓게 주는 것이 자연스럽습니다. */
-#cs{flex:1;overflow-y:scroll;padding:24px 15% 24px 15%;scrollbar-width:none}
+#cs{flex:1;overflow-y:scroll;padding:14px 30px 14px 18px;scrollbar-width:none}
 #cs::-webkit-scrollbar{display:none}
 .mg{padding:10px 14px;border-radius:10px;margin-bottom:4px;border-left:3px solid transparent;cursor:default;transition:background .12s;background:transparent}
 .mg:hover{background:#1e293b}
@@ -125,7 +128,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
       <div id="bmCnt"></div>
     </div>
     <div class="dl-wrap">
-      <div class="sb-lb">날짜</div>
+      <div class="sb-lb">날짜 (최신순)</div>
       <div id="dl"></div>
     </div>
   </aside>
@@ -159,7 +162,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
-const S={msgs:[],files:{},dates:[],sel:null,fs:17,bm:new Set(),bmf:false,zns:[]};
+const S={msgs:[],files:{},dates:[],sel:null,fs:17,bm:new Set(),bmf:false,zns:[],bmDirty:false};
 let mImgs=[],mIdx=0,mOpen=false,tdY=0,tdS=0,tDrag=false;
 
 async function init(){
@@ -218,6 +221,14 @@ async function init(){
     else if(e.key==='ArrowRight'){e.preventDefault();showM(mIdx+1);}
     else if(e.key==='Escape')closeM();
   });
+  window.addEventListener('beforeunload',e=>{
+    if(S.bmDirty&&S.bm.size>0){
+      const msg='북마크 변경사항이 저장되지 않았습니다. 내보내기 하지 않고 닫으시겠습니까?';
+      e.preventDefault();
+      e.returnValue=msg;
+      return msg;
+    }
+  });
   syncSbTop();
   applyFs(17);
   updBmCnt();
@@ -260,7 +271,7 @@ async function loadZip(file){
     updDates();
     if(!S.zns.includes(file.name))S.zns.push(file.name);
     rZl();rDl();
-    if(!S.sel&&S.dates.length)selD(S.dates[S.dates.length-1]);
+    if(!S.sel&&S.dates.length)selD(S.dates[0]);
     else if(S.sel)rMsgs();
   }catch(e){
     console.error(e);
@@ -303,7 +314,7 @@ function mrgMsgs(nm){
 
 function updDates(){
   const ds=new Set(S.msgs.map(m=>m.date));
-  S.dates=[...ds].sort();
+  S.dates=[...ds].sort().reverse();
 }
 
 function grpMsgs(msgs){
@@ -339,11 +350,15 @@ function rZl(){
 }
 
 function rDl(){
-  const cnt={};
-  S.msgs.forEach(m=>cnt[m.date]=(cnt[m.date]||0)+1);
+  const cnt={},bmCnt={};
+  S.msgs.forEach(m=>{
+    cnt[m.date]=(cnt[m.date]||0)+1;
+    if(S.bm.has(m.id))bmCnt[m.date]=(bmCnt[m.date]||0)+1;
+  });
   document.getElementById('dl').innerHTML=S.dates.map(d=>{
     const[,mo,dd]=d.split('-');
-    return `<div class="di${d===S.sel?' sel':''}" data-d="${d}"><span>${+mo}월 ${+dd}일</span><span class="dc">${cnt[d]||0}</span></div>`;
+    const bm=bmCnt[d]?`<span class="dbm">★${bmCnt[d]}</span>`:'';
+    return `<div class="di${d===S.sel?' sel':''}" data-d="${d}"><span>${+mo}월 ${+dd}일</span><span class="di-r">${bm}<span class="dc">${cnt[d]||0}</span></span></div>`;
   }).join('');
   document.querySelectorAll('.di').forEach(el=>el.onclick=()=>selD(el.dataset.d));
 }
@@ -420,7 +435,9 @@ function rMsgs(){
       if(allBm)ids.forEach(id=>S.bm.delete(id));
       else ids.forEach(id=>S.bm.add(id));
       el.classList.toggle('bm',!allBm);
+      S.bmDirty=true;
       saveBm();
+      rDl();
       updSb();
     });
     frag.appendChild(el);
@@ -477,7 +494,8 @@ async function saveBm(){
 
 function updBmCnt(){
   const n=S.bm.size;
-  document.getElementById('bmCnt').innerHTML=n>0?`북마크 <span class="num">${n}</span>개`:'';
+  const dirty=S.bmDirty?'<span class="dirty" title="저장되지 않은 변경사항">●</span>':'';
+  document.getElementById('bmCnt').innerHTML=n>0?`북마크 <span class="num">${n}</span>개${dirty}`:'';
 }
 
 function toast(msg){
@@ -489,11 +507,21 @@ function toast(msg){
   setTimeout(()=>{t.classList.remove('sh');setTimeout(()=>t.remove(),250);},2200);
 }
 
+function getExportPrefix(){
+  if(S.zns.length===0)return 'kakao-bookmarks';
+  let name=S.zns[0].replace(/\.zip$/i,'');
+  if(S.zns.length>1)name+=`_외${S.zns.length-1}`;
+  name=name.replace(/[\\/:*?"<>|]/g,'_');
+  if(name.length>80)name=name.slice(0,80);
+  return name;
+}
+
 function expBm(){
   if(S.bm.size===0){toast('북마크된 메시지가 없습니다');return;}
   const data={
     version:1,
     exportedAt:new Date().toISOString(),
+    sourceZips:[...S.zns],
     bookmarkIds:[...S.bm],
     messages:S.msgs.filter(m=>S.bm.has(m.id)).map(m=>({
       id:m.id,date:m.date,ts:m.ts,timeStr:m.timeStr,name:m.name,txt:m.txt
@@ -503,9 +531,11 @@ function expBm(){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
-  a.download=`kakao-bookmarks-${new Date().toISOString().slice(0,10)}.json`;
+  a.download=`${getExportPrefix()}_${new Date().toISOString().slice(0,10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
+  S.bmDirty=false;
+  updBmCnt();
   toast(`북마크 ${S.bm.size}개를 내보냈습니다`);
 }
 
@@ -518,7 +548,9 @@ function impBm(file){
       if(!Array.isArray(ids)){toast('잘못된 파일 형식입니다');return;}
       let added=0;
       ids.forEach(id=>{if(!S.bm.has(id)){S.bm.add(id);added++;}});
+      S.bmDirty=false;
       saveBm();
+      rDl();
       rMsgs();
       toast(`${added}개의 북마크를 추가했습니다 (전체 ${S.bm.size}개)`);
     }catch(err){
@@ -552,7 +584,7 @@ function expMd(){
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
   a.href=url;
-  a.download=`kakao-bookmarks-${new Date().toISOString().slice(0,10)}.md`;
+  a.download=`${getExportPrefix()}_${new Date().toISOString().slice(0,10)}.md`;
   a.click();
   URL.revokeObjectURL(url);
   toast(`${bmMsgs.length}개 메시지를 마크다운으로 내보냈습니다`);
