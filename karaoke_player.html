@@ -348,7 +348,6 @@
     white-space: nowrap;
   }
   .th-btn:hover { color: #fff; border-color: #555; }
-  #highlight-btn.hl-on { background: #2a2000; border-color: #c8a020; color: #f0c040; }
 
   .font-size-group { display: flex; gap: 4px; align-items: center; }
   .font-size-group .th-btn { padding: 4px 8px; }
@@ -567,9 +566,8 @@
     <div id="text-header">
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
         <span style="color:#555;">자막</span>
-        <button id="highlight-btn" class="th-btn" title="형광펜 모드">🖊 형광펜</button>
       </div>
-      <span class="tip" style="flex:1;text-align:center;">클릭 = 이동 &nbsp;·&nbsp; 더블클릭 = 수정</span>
+      <span class="tip" style="flex:1;text-align:center;">클릭 = 이동 &nbsp;·&nbsp; 더블클릭 = 형광펜 &nbsp;·&nbsp; Ctrl+클릭 = 수정</span>
       <div class="font-size-group">
         <button class="th-btn" id="font-dec">A−</button>
         <span id="font-size-val">16</span>
@@ -607,7 +605,6 @@
   let currentSRTName = 'edited.srt';
   let highlighted = new Set();
   let savedHighlights = new Set();
-  let highlightMode = false;
   let subFontSize = 16;
 
   const inputMedia = document.getElementById('input-media');
@@ -823,14 +820,6 @@
     } catch {}
   }
 
-  // ── 형광펜 모드 ──
-  const highlightBtn = document.getElementById('highlight-btn');
-  highlightBtn.addEventListener('click', () => {
-    highlightMode = !highlightMode;
-    highlightBtn.classList.toggle('hl-on', highlightMode);
-    highlightBtn.textContent = highlightMode ? '🖊 형광펜 ON' : '🖊 형광펜';
-  });
-
   function toggleHighlight(idx) {
     if (highlighted.has(idx)) highlighted.delete(idx);
     else highlighted.add(idx);
@@ -887,9 +876,13 @@
       div.appendChild(timeSpan);
       div.appendChild(textSpan);
 
+      // 단일 클릭 → 재생 위치 이동 / Ctrl+클릭 → 텍스트 편집
       div.addEventListener('click', (e) => {
         if (editingIdx !== null) return;
-        if (highlightMode) { toggleHighlight(i); return; }
+        if (e.ctrlKey || e.metaKey) {
+          startEditing(i);
+          return;
+        }
         if (e.detail === 1) {
           setTimeout(() => {
             if (e.detail === 1 && editingIdx === null) {
@@ -900,10 +893,11 @@
         }
       });
 
+      // 더블클릭 → 형광펜 토글
       div.addEventListener('dblclick', (e) => {
         e.preventDefault();
         if (editingIdx !== null) return;
-        startEditing(i);
+        toggleHighlight(i);
       });
 
       area.appendChild(div);
@@ -1080,8 +1074,7 @@
     mediaPanel.style.width = ''; mediaPanel.style.height = '';
     layoutBtn.textContent = '⬌ 좌우 배치';
     mediaReady = false; srtReady = false; srtManuallySet = false;
-    highlighted = new Set(); savedHighlights = new Set(); highlightMode = false;
-    highlightBtn.classList.remove('hl-on'); highlightBtn.textContent = '🖊 형광펜';
+    highlighted = new Set(); savedHighlights = new Set();
     subFontSize = 16; applyFontSize();
     subs = []; originalSubs = []; lineEls = []; activeIdx = -1; editingIdx = null;
     media.playbackRate = 1;
