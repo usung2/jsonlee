@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SRT 노래방 플레이어</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', sans-serif;
+    background: #0f0f13;
+    color: #e8e8e8;
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  #setup {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    gap: 24px;
+    padding: 40px 24px;
+  }
+
+  #setup h1 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.5px;
+    color: #fff;
+  }
+
+  .hint {
+    font-size: 13px;
+    color: #888;
+    text-align: center;
+    line-height: 1.6;
+    max-width: 520px;
+  }
+  .hint .accent { color: #8b7ff0; font-weight: 500; }
+
+  .upload-row {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    max-width: 600px;
+    transition: transform 0.15s;
+  }
+  .upload-row.dragover { transform: scale(1.02); }
+
+  .upload-box {
+    flex: 1;
+    border: 1.5px dashed #333;
+    border-radius: 14px;
+    padding: 28px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: #18181f;
+  }
+  .upload-box:hover, .upload-row.dragover .upload-box { border-color: #7c6ef0; background: #1e1e2a; }
+  .upload-box.done { border-color: #4caf7d; border-style: solid; }
+  .upload-box input { display: none; }
+  .upload-box .icon { font-size: 28px; margin-bottom: 10px; }
+  .upload-box .title { font-size: 14px; font-weight: 600; color: #ccc; }
+  .upload-box .sub { font-size: 12px; color: #666; margin-top: 5px; word-break: break-all; }
+  .upload-box.done .title { color: #4caf7d; }
+
+  #recent-box {
+    width: 100%;
+    max-width: 600px;
+    background: #15151c;
+    border: 1px solid #222;
+    border-radius: 12px;
+    padding: 14px 18px;
+    display: none;
+  }
+  #recent-box.show { display: block; }
+  #recent-box .title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  #recent-box h3 {
+    font-size: 12px;
+    font-weight: 600;
+    color: #888;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  #clear-history {
+    font-size: 11px;
+    color: #555;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  #clear-history:hover { color: #aaa; }
+  .recent-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #999;
+    gap: 10px;
+  }
+  .recent-item:hover { background: #1e1e2a; color: #ccc; }
+  .recent-name { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .recent-pos { color: #8b7ff0; font-variant-numeric: tabular-nums; font-size: 11px; flex-shrink: 0; }
+
+  #start-btn {
+    padding: 14px 40px;
+    font-size: 16px;
+    font-weight: 600;
+    border: none;
+    border-radius: 12px;
+    background: #6c5ce7;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.2s, opacity 0.2s;
+    letter-spacing: -0.3px;
+  }
+  #start-btn:disabled { opacity: 0.35; cursor: default; }
+  #start-btn:not(:disabled):hover { background: #7c6ef0; }
+
+  /* ── 플레이어 ── */
+  #player {
+    display: none;
+    height: 100vh;
+    width: 100vw;
+    flex-direction: column;
+  }
+  #player.active { display: flex; }
+  #player.horizontal { flex-direction: row; }
+
+  #media-panel {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #0f0f13;
+  }
+  #player:not(.horizontal) #media-panel { width: 100%; height: 50%; }
+  #player.horizontal #media-panel { width: 70%; height: 100%; }
+
+  #video-wrap { cursor: pointer; }
+  #video-wrap {
+    flex: 1;
+    background: #000;
+    display: none;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    min-height: 0;
+  }
+  #video-wrap.show { display: flex; }
+  #media {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    display: block;
+  }
+
+  #controls {
+    flex-shrink: 0;
+    background: #15151c;
+    border-top: 1px solid #222;
+    padding: 12px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .ctrl-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  #play-btn {
+    width: 40px; height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: #6c5ce7;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s;
+  }
+  #play-btn:hover { background: #7c6ef0; }
+
+  #file-name {
+    font-size: 12px;
+    color: #666;
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #file-name .edited-badge {
+    display: none;
+    margin-left: 8px;
+    padding: 2px 8px;
+    background: #3d3260;
+    color: #a8a0f0;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  #file-name.edited .edited-badge { display: inline-block; }
+
+  .speed-group {
+    display: flex;
+    gap: 4px;
+    background: #1e1e2a;
+    border-radius: 8px;
+    padding: 3px;
+  }
+  .speed-btn {
+    padding: 5px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    font-variant-numeric: tabular-nums;
+    transition: background 0.15s, color 0.15s;
+  }
+  .speed-btn:hover { color: #ccc; }
+  .speed-btn.active { background: #6c5ce7; color: #fff; }
+
+  .ctrl-btn {
+    padding: 7px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #333;
+    border-radius: 7px;
+    background: #1e1e2a;
+    color: #aaa;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    display: flex; align-items: center; gap: 6px;
+    white-space: nowrap;
+  }
+  .ctrl-btn:hover { color: #fff; border-color: #555; }
+  #save-btn.has-edits { background: #3d3260; border-color: #6c5ce7; color: #fff; }
+  #save-btn.has-edits:hover { background: #4d4280; }
+
+  .time-display {
+    font-size: 12px;
+    color: #888;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  #progress-wrap {
+    position: relative;
+    height: 5px;
+    background: #2a2a35;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  #progress-fill {
+    height: 100%;
+    background: #6c5ce7;
+    border-radius: 3px;
+    pointer-events: none;
+    transition: width 0.1s linear;
+  }
+
+  #divider {
+    flex-shrink: 0;
+    background: #222;
+    position: relative;
+    transition: background 0.15s;
+  }
+  #divider:hover, #divider.dragging { background: #6c5ce7; }
+  #player:not(.horizontal) #divider { height: 5px; width: 100%; cursor: row-resize; }
+  #player.horizontal #divider { width: 5px; height: 100%; cursor: col-resize; }
+
+
+  #text-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background: #0f0f13;
+    position: relative;
+  }
+
+  #hl-rail {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 14px;
+    pointer-events: none;
+    z-index: 6;
+    overflow: hidden;
+  }
+  .hl-mark {
+    position: absolute;
+    left: 2px;
+    right: 2px;
+    height: 4px;
+    background: #f0c040;
+    border-radius: 2px;
+    opacity: 0.85;
+  }
+
+  #text-header {
+    flex-shrink: 0;
+    padding: 8px 16px;
+    border-bottom: 1px solid #222;
+    font-size: 11px;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  #text-header .tip { color: #555; }
+
+  .th-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border: 1px solid #333;
+    border-radius: 6px;
+    background: #1e1e2a;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    white-space: nowrap;
+  }
+  .th-btn:hover { color: #fff; border-color: #555; }
+  #highlight-btn.hl-on { background: #2a2000; border-color: #c8a020; color: #f0c040; }
+
+  .font-size-group { display: flex; gap: 4px; align-items: center; }
+  .font-size-group .th-btn { padding: 4px 8px; }
+  #font-size-val { font-size: 11px; color: #666; min-width: 24px; text-align: center; }
+
+  /* 형광펜 하이라이트 */
+  .sub-line.highlighted { background: #1e1a00 !important; border-left-color: #c8a020 !important; }
+  .sub-line.highlighted .sub-text { color: #f0d060 !important; }
+  .sub-line.highlighted .sub-time { color: #8a7020 !important; }
+  .sub-line.highlighted.active { background: #2a2400 !important; border-left-color: #f0c040 !important; }
+  .sub-line.highlighted.active .sub-text { color: #ffe060 !important; font-weight: 600 !important; }
+
+  #subtitle-area {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow-y: scroll;
+    padding: 14px 0 40px;
+    scroll-behavior: smooth;
+  }
+  #subtitle-area::-webkit-scrollbar { width: 14px; }
+  #subtitle-area::-webkit-scrollbar-track { background: #1a1a22; border-radius: 3px; }
+  #subtitle-area::-webkit-scrollbar-thumb { background: #444; border-radius: 3px; }
+  #subtitle-area::-webkit-scrollbar-thumb:hover { background: #666; }
+
+  .sub-line {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 10px 24px;
+    cursor: pointer;
+    border-left: 3px solid transparent;
+    transition: background 0.15s, border-color 0.15s;
+    border-radius: 0 8px 8px 0;
+  }
+  .sub-line:hover { background: #1e1e2a; }
+  .sub-line.active { border-left-color: #6c5ce7; background: #1a1a2e; }
+  .sub-line.editing { background: #1e1e2a; border-left-color: #f0a030; cursor: default; }
+  .sub-line.past .sub-text { color: #444; }
+  .sub-line.modified::after {
+    content: '✎';
+    color: #8b7ff0;
+    font-size: 11px;
+    margin-left: auto;
+    align-self: flex-start;
+    padding-top: 4px;
+  }
+
+  .sub-time {
+    font-size: 11px;
+    color: #555;
+    min-width: 52px;
+    padding-top: 3px;
+    font-variant-numeric: tabular-nums;
+    flex-shrink: 0;
+    transition: color 0.15s;
+  }
+  .sub-line.active .sub-time { color: #8b7ff0; }
+
+  .sub-text {
+    font-size: 16px;
+    line-height: 1.65;
+    color: #bbb;
+    transition: color 0.15s, font-size 0.15s;
+    flex: 1;
+    min-width: 0;
+    word-break: break-word;
+  }
+  .sub-line.active .sub-text {
+    color: #fff;
+    font-size: 17px;
+    font-weight: 500;
+  }
+
+  .sub-edit {
+    flex: 1;
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1.65;
+    color: #fff;
+    background: #0f0f13;
+    border: 1.5px solid #6c5ce7;
+    border-radius: 6px;
+    padding: 6px 10px;
+    resize: vertical;
+    outline: none;
+    min-height: 40px;
+    min-width: 0;
+  }
+  .sub-edit-hint {
+    font-size: 10px;
+    color: #666;
+    margin-top: 4px;
+    display: flex;
+    gap: 10px;
+  }
+  .sub-edit-hint kbd {
+    background: #2a2a35;
+    border: 1px solid #333;
+    border-radius: 3px;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 10px;
+    color: #aaa;
+  }
+
+  #reset-btn {
+    position: fixed;
+    bottom: 16px;
+    right: 16px;
+    padding: 7px 14px;
+    font-size: 12px;
+    border: 1px solid #333;
+    border-radius: 8px;
+    background: #18181f;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    z-index: 10;
+  }
+  #reset-btn:hover { color: #ccc; border-color: #555; }
+
+  #toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-60px);
+    background: #1e1e2a;
+    border: 1px solid #6c5ce7;
+    border-radius: 10px;
+    padding: 10px 18px;
+    font-size: 13px;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    opacity: 0;
+    transition: transform 0.3s, opacity 0.3s;
+    z-index: 100;
+    pointer-events: auto;
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  #toast button { background: #6c5ce7; border: none; border-radius: 6px; padding: 4px 10px; font-size: 12px; color: #fff; cursor: pointer; font-weight: 500; }
+  #toast button:hover { background: #7c6ef0; }
+  #toast .toast-close { background: transparent; color: #888; padding: 4px 6px; }
+  #toast .toast-close:hover { color: #fff; background: transparent; }
+
+  body.resizing { cursor: inherit; user-select: none; }
+  body.resizing * { user-select: none !important; }
+</style>
+</head>
+<body>
+
+<div id="setup">
+  <h1>SRT 노래방 플레이어</h1>
+
+  <p class="hint">
+    💡 <span class="accent">파일 또는 폴더를 드래그</span>하거나, 미디어 선택 시
+    <span class="accent">동영상 + SRT를 함께 선택</span>(⌘+클릭)하면 자동으로 매칭돼요
+  </p>
+
+  <div class="upload-row" id="upload-row">
+    <label class="upload-box" id="box-media">
+      <div class="icon">🎬</div>
+      <div class="title">음성 또는 동영상</div>
+      <div class="sub" id="media-name">MP3, M4A, WAV, WebM, MP4 등</div>
+      <input type="file" id="input-media" accept="audio/*,video/*,.webm,.mp4,.mov,.mkv,.srt" multiple>
+    </label>
+
+    <label class="upload-box" id="box-srt">
+      <div class="icon">📄</div>
+      <div class="title">SRT 파일 (수동)</div>
+      <div class="sub" id="srt-name">자동 매칭이 안 될 때만 지정</div>
+      <input type="file" id="input-srt" accept=".srt,.txt">
+    </label>
+  </div>
+
+  <div id="recent-box">
+    <div class="title-row">
+      <h3>📍 최근 재생 기록</h3>
+      <button id="clear-history">전체 삭제</button>
+    </div>
+    <div id="recent-list"></div>
+  </div>
+
+  <button id="start-btn" disabled>재생 시작</button>
+</div>
+
+<div id="player">
+  <div id="media-panel">
+    <div id="video-wrap">
+      <video id="media" playsinline></video>
+    </div>
+
+    <div id="controls">
+      <div class="ctrl-top">
+        <button id="play-btn">▶</button>
+        <span id="file-name"><span class="name"></span><span class="edited-badge">수정됨</span></span>
+        <button id="save-btn" class="ctrl-btn" title="수정된 SRT 다운로드">💾 SRT 저장</button>
+        <button id="layout-btn" class="ctrl-btn" title="배치 전환">⬍ 상하 배치</button>
+        <div class="speed-group">
+          <button class="speed-btn active" data-speed="1">1×</button>
+          <button class="speed-btn" data-speed="1.5">1.5×</button>
+          <button class="speed-btn" data-speed="2">2×</button>
+        </div>
+        <span class="time-display"><span id="cur-time">00:00</span> / <span id="tot-time">00:00</span></span>
+      </div>
+      <div id="progress-wrap">
+        <div id="progress-fill" style="width:0%"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="divider"></div>
+
+  <div id="text-panel">
+    <div id="text-header">
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+        <span style="color:#555;">자막</span>
+        <button id="highlight-btn" class="th-btn" title="형광펜 모드">🖊 형광펜</button>
+      </div>
+      <span class="tip" style="flex:1;text-align:center;">클릭 = 이동 &nbsp;·&nbsp; 더블클릭 = 수정</span>
+      <div class="font-size-group">
+        <button class="th-btn" id="font-dec">A−</button>
+        <span id="font-size-val">16</span>
+        <button class="th-btn" id="font-inc">A+</button>
+      </div>
+    </div>
+    <div id="subtitle-area"></div>
+    <div id="hl-rail"></div>
+  </div>
+</div>
+
+<button id="reset-btn" style="display:none" onclick="resetAll()">← 파일 다시 선택</button>
+
+<div id="toast">
+  <span id="toast-msg"></span>
+  <button id="toast-action" style="display:none"></button>
+  <button class="toast-close" onclick="hideToast()">×</button>
+</div>
+
+<script>
+  const media = document.getElementById('media');
+  const videoWrap = document.getElementById('video-wrap');
+  const player = document.getElementById('player');
+  const mediaPanel = document.getElementById('media-panel');
+  const divider = document.getElementById('divider');
+  const layoutBtn = document.getElementById('layout-btn');
+  const saveBtn = document.getElementById('save-btn');
+  const uploadRow = document.getElementById('upload-row');
+  const toast = document.getElementById('toast');
+  let subs = [], originalSubs = [];
+  let activeIdx = -1, lineEls = [];
+  let mediaReady = false, srtReady = false, srtManuallySet = false;
+  let mediaFileKey = null, pendingResume = 0;
+  let editingIdx = null;
+  let currentSRTName = 'edited.srt';
+  let highlighted = new Set();
+  let savedHighlights = new Set();
+  let highlightMode = false;
+  let subFontSize = 16;
+
+  const inputMedia = document.getElementById('input-media');
+  const inputSRT   = document.getElementById('input-srt');
+
+  // ── localStorage ──
+  const STORAGE_KEY = 'srt_karaoke_history';
+  function loadHistory() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; } }
+  function saveHistory(h) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); } catch {} }
+  function getFileKey(f) { return `${f.name}__${f.size}`; }
+
+  function savePosition() {
+    if (!mediaFileKey || !media.duration) return;
+    const t = media.currentTime;
+    if (t < 5 || t > media.duration - 5) { removeFromHistory(mediaFileKey); return; }
+    const h = loadHistory();
+    h[mediaFileKey] = { name: document.querySelector('#file-name .name').textContent, position: t, duration: media.duration, updatedAt: Date.now() };
+    saveHistory(h);
+  }
+  function removeFromHistory(key) { const h = loadHistory(); delete h[key]; saveHistory(h); }
+
+  function renderRecentList() {
+    const hist = loadHistory();
+    const entries = Object.entries(hist).sort((a,b) => b[1].updatedAt - a[1].updatedAt).slice(0, 5);
+    const box = document.getElementById('recent-box');
+    const list = document.getElementById('recent-list');
+    if (!entries.length) { box.classList.remove('show'); return; }
+    box.classList.add('show');
+    list.innerHTML = '';
+    entries.forEach(([, info]) => {
+      const item = document.createElement('div');
+      item.className = 'recent-item';
+      item.innerHTML = `<span class="recent-name">${info.name}</span><span class="recent-pos">${fmtTime(info.position)} / ${fmtTime(info.duration)}</span>`;
+      list.appendChild(item);
+    });
+  }
+
+  document.getElementById('clear-history').addEventListener('click', () => {
+    if (confirm('모든 재생 기록을 삭제할까요?')) { saveHistory({}); renderRecentList(); }
+  });
+
+  // ── 토스트 ──
+  let toastTimer = null;
+  function showToast(msg, actionText, actionCb, dur = 5000) {
+    document.getElementById('toast-msg').textContent = msg;
+    const ab = document.getElementById('toast-action');
+    if (actionText) { ab.textContent = actionText; ab.style.display = 'inline-block'; ab.onclick = () => { actionCb(); hideToast(); }; }
+    else ab.style.display = 'none';
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(hideToast, dur);
+  }
+  function hideToast() { toast.classList.remove('show'); clearTimeout(toastTimer); }
+
+  // ── 파일 처리 ──
+  const MEDIA_RE = /\.(webm|mp4|mov|mkv|mp3|m4a|wav|ogg|aac|flac)$/i;
+  const SRT_RE   = /\.(srt)$/i;
+  function basename(n) { return n.replace(/\.[^.]+$/, '').toLowerCase(); }
+
+  function processFiles(files) {
+    const mf = files.filter(f => MEDIA_RE.test(f.name) || (f.type && (f.type.startsWith('video/') || f.type.startsWith('audio/'))));
+    const sf = files.filter(f => SRT_RE.test(f.name));
+    if (mf.length) {
+      loadMedia(mf[0]);
+      if (!srtManuallySet && sf.length) {
+        const base = basename(mf[0].name);
+        loadSRTFile(sf.find(f => basename(f.name) === base) || sf[0], false);
+      }
+    } else if (sf.length) { loadSRTFile(sf[0], true); }
+  }
+
+  function loadMedia(file) {
+    media.src = URL.createObjectURL(file);
+    mediaFileKey = getFileKey(file);
+    document.getElementById('media-name').textContent = file.name;
+    document.querySelector('#file-name .name').textContent = file.name;
+    document.getElementById('box-media').classList.add('done');
+    mediaReady = true;
+    const h = loadHistory();
+    pendingResume = h[mediaFileKey] ? h[mediaFileKey].position : 0;
+    checkReady();
+  }
+
+  function loadSRTFile(file, manual) {
+    currentSRTName = file.name.replace(/\.[^.]+$/, '') + '.srt';
+    const r = new FileReader();
+    r.onload = ev => {
+      subs = parseSRT(ev.target.result);
+      originalSubs = subs.map(s => ({ ...s }));
+      document.getElementById('srt-name').textContent = `${manual ? '' : '✓ 자동 매칭 · '}${file.name} (${subs.length}개)`;
+      document.getElementById('box-srt').classList.add('done');
+      srtReady = true;
+      if (manual) srtManuallySet = true;
+      checkReady();
+    };
+    r.readAsText(file, 'UTF-8');
+  }
+
+  inputMedia.addEventListener('change', e => { const f = Array.from(e.target.files); if (f.length) processFiles(f); });
+  inputSRT.addEventListener('change', e => { if (e.target.files[0]) loadSRTFile(e.target.files[0], true); });
+  function checkReady() { document.getElementById('start-btn').disabled = !(mediaReady && srtReady); }
+
+  // ── 드래그 & 드롭 ──
+  async function collectFromEntry(entry, out) {
+    if (entry.isFile) { const f = await new Promise(res => entry.file(res)); out.push(f); }
+    else if (entry.isDirectory) {
+      const rd = entry.createReader();
+      const entries = await new Promise(res => rd.readEntries(res));
+      for (const e of entries) await collectFromEntry(e, out);
+    }
+  }
+  ['dragenter','dragover'].forEach(ev => uploadRow.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); uploadRow.classList.add('dragover'); }));
+  ['dragleave','drop'].forEach(ev => uploadRow.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); if (ev === 'dragleave' && e.target !== uploadRow) return; uploadRow.classList.remove('dragover'); }));
+  uploadRow.addEventListener('drop', async e => {
+    e.preventDefault(); uploadRow.classList.remove('dragover');
+    const items = e.dataTransfer.items, files = [];
+    if (items && items.length && items[0].webkitGetAsEntry) {
+      const entries = []; for (let i = 0; i < items.length; i++) { const en = items[i].webkitGetAsEntry(); if (en) entries.push(en); }
+      for (const en of entries) await collectFromEntry(en, files);
+    } else { for (const f of e.dataTransfer.files) files.push(f); }
+    if (files.length) processFiles(files);
+  });
+
+  document.getElementById('start-btn').addEventListener('click', startPlayer);
+
+  // ── SRT 파싱/생성 ──
+  const HL_MARKER = '[★] ';
+
+  function parseSRT(text) {
+    return text.trim().replace(/\r\n/g,'\n').replace(/\r/g,'\n').split(/\n\n+/).map(block => {
+      const lines = block.trim().split('\n');
+      if (lines.length < 3) return null;
+      const m = lines[1].match(/(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})/);
+      if (!m) return null;
+      const toS = (h,mn,s,ms) => +h*3600 + +mn*60 + +s + +ms/1000;
+      let txt = lines.slice(2).join('\n').replace(/<[^>]+>/g,'').trim();
+      const isHL = txt.startsWith(HL_MARKER);
+      if (isHL) txt = txt.slice(HL_MARKER.length);
+      return { start: toS(m[1],m[2],m[3],m[4]), end: toS(m[5],m[6],m[7],m[8]), txt, _hl: isHL };
+    }).filter(Boolean);
+  }
+
+  function fmtSRT(t) {
+    const h = Math.floor(t/3600).toString().padStart(2,'0');
+    const m = Math.floor((t%3600)/60).toString().padStart(2,'0');
+    const s = Math.floor(t%60).toString().padStart(2,'0');
+    const ms = Math.round((t%1)*1000).toString().padStart(3,'0');
+    return `${h}:${m}:${s},${ms}`;
+  }
+
+  function generateSRT() {
+    return subs.map((s,i) => {
+      const txt = highlighted.has(i) ? HL_MARKER + s.txt : s.txt;
+      return `${i+1}\n${fmtSRT(s.start)} --> ${fmtSRT(s.end)}\n${txt}\n`;
+    }).join('\n');
+  }
+
+  function downloadSRT() {
+    const blob = new Blob(['\uFEFF' + generateSRT()], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = currentSRTName; a.click();
+    URL.revokeObjectURL(a.href);
+    savedHighlights = new Set(highlighted);
+    updateEditedState();
+    showToast(`${currentSRTName} 다운로드 완료`, null, null, 2500);
+  }
+
+  saveBtn.addEventListener('click', downloadSRT);
+
+  // ── 형광펜 저장/복원 ──
+  function saveHighlights() {
+    if (!mediaFileKey) return;
+    try { localStorage.setItem('srt_hl_' + mediaFileKey, JSON.stringify([...highlighted])); } catch {}
+  }
+
+  function updateHLRail() {
+    const rail = document.getElementById('hl-rail');
+    if (!rail) return;
+    rail.innerHTML = '';
+    if (!lineEls.length || !highlighted.size) return;
+    const area = document.getElementById('subtitle-area');
+    const headerH = document.getElementById('text-header').offsetHeight;
+    rail.style.top = headerH + 'px';
+    const railH = rail.offsetHeight;
+    const scrollH = area.scrollHeight;
+    if (!scrollH || !railH) return;
+    highlighted.forEach(idx => {
+      const el = lineEls[idx];
+      if (!el) return;
+      const mark = document.createElement('div');
+      mark.className = 'hl-mark';
+      mark.style.top = Math.round((el.offsetTop / scrollH) * railH) + 'px';
+      rail.appendChild(mark);
+    });
+  }
+
+  function restoreHighlights() {
+    const fromSRT = subs.map((s,i) => s._hl ? i : -1).filter(i => i >= 0);
+    if (fromSRT.length > 0) {
+      highlighted = new Set(fromSRT);
+      savedHighlights = new Set(fromSRT);
+      showToast(`형광펜 ${fromSRT.length}개 항목이 SRT에서 복원됐어요`, null, null, 3000);
+      return;
+    }
+    if (!mediaFileKey) return;
+    try {
+      const saved = JSON.parse(localStorage.getItem('srt_hl_' + mediaFileKey) || '[]');
+      if (saved.length > 0) {
+        highlighted = new Set(saved);
+        savedHighlights = new Set(saved);
+        showToast(`형광펜 ${saved.length}개 항목이 복원됐어요`, null, null, 3000);
+      }
+    } catch {}
+  }
+
+  // ── 형광펜 모드 ──
+  const highlightBtn = document.getElementById('highlight-btn');
+  highlightBtn.addEventListener('click', () => {
+    highlightMode = !highlightMode;
+    highlightBtn.classList.toggle('hl-on', highlightMode);
+    highlightBtn.textContent = highlightMode ? '🖊 형광펜 ON' : '🖊 형광펜';
+  });
+
+  function toggleHighlight(idx) {
+    if (highlighted.has(idx)) highlighted.delete(idx);
+    else highlighted.add(idx);
+    lineEls[idx].classList.toggle('highlighted', highlighted.has(idx));
+    saveHighlights();
+    updateEditedState();
+    updateHLRail();
+  }
+
+  // ── 글자 크기 ──
+  function applyFontSize() {
+    document.getElementById('font-size-val').textContent = subFontSize;
+    document.getElementById('subtitle-area').style.setProperty('--sf', subFontSize + 'px');
+    document.querySelectorAll('.sub-text').forEach(el => { el.style.fontSize = subFontSize + 'px'; });
+  }
+  document.getElementById('font-inc').addEventListener('click', () => { if (subFontSize < 32) { subFontSize += 2; applyFontSize(); } });
+  document.getElementById('font-dec').addEventListener('click', () => { if (subFontSize > 10) { subFontSize -= 2; applyFontSize(); } });
+
+  function fmtTime(s) { if (!isFinite(s)) return '00:00'; return `${Math.floor(s/60).toString().padStart(2,'0')}:${Math.floor(s%60).toString().padStart(2,'0')}`; }
+  function fmtFull(s) { return `${Math.floor(s/60).toString().padStart(2,'0')}:${Math.floor(s%60).toString().padStart(2,'0')}`; }
+
+  // ── 플레이어 시작 (기본 좌우 70:30) ──
+  function startPlayer() {
+    document.getElementById('setup').style.display = 'none';
+    player.classList.add('active', 'horizontal');
+    layoutBtn.textContent = '⬍ 상하 배치';
+    document.getElementById('reset-btn').style.display = 'block';
+    restoreHighlights();
+    buildSubtitles();
+    setTimeout(updateHLRail, 80);
+    media.play();
+  }
+
+  // ── 자막 목록 빌드 ──
+  function buildSubtitles() {
+    const area = document.getElementById('subtitle-area');
+    area.innerHTML = '';
+    lineEls = [];
+    subs.forEach((s, i) => {
+      const div = document.createElement('div');
+      div.className = 'sub-line';
+      if (s.txt !== originalSubs[i]?.txt) div.classList.add('modified');
+
+      const timeSpan = document.createElement('span');
+      timeSpan.className = 'sub-time';
+      timeSpan.textContent = fmtFull(s.start);
+
+      const textSpan = document.createElement('span');
+      textSpan.className = 'sub-text';
+      textSpan.textContent = s.txt;
+      textSpan.style.fontSize = subFontSize + 'px';
+      if (highlighted.has(i)) div.classList.add('highlighted');
+
+      div.appendChild(timeSpan);
+      div.appendChild(textSpan);
+
+      div.addEventListener('click', (e) => {
+        if (editingIdx !== null) return;
+        if (highlightMode) { toggleHighlight(i); return; }
+        if (e.detail === 1) {
+          setTimeout(() => {
+            if (e.detail === 1 && editingIdx === null) {
+              media.currentTime = s.start;
+              if (media.paused) media.play();
+            }
+          }, 200);
+        }
+      });
+
+      div.addEventListener('dblclick', (e) => {
+        e.preventDefault();
+        if (editingIdx !== null) return;
+        startEditing(i);
+      });
+
+      area.appendChild(div);
+      lineEls.push(div);
+    });
+  }
+
+  // ── 자막 편집 ──
+  function startEditing(idx) {
+    editingIdx = idx;
+    const lineEl = lineEls[idx];
+    lineEl.classList.add('editing');
+    const textSpan = lineEl.querySelector('.sub-text');
+    const oldText = subs[idx].txt;
+
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'flex:1; min-width:0;';
+    const textarea = document.createElement('textarea');
+    textarea.className = 'sub-edit';
+    textarea.value = oldText;
+    textarea.rows = Math.max(2, oldText.split('\n').length);
+    const hint = document.createElement('div');
+    hint.className = 'sub-edit-hint';
+    hint.innerHTML = '<span><kbd>⌘ + Enter</kbd> 저장</span><span><kbd>Esc</kbd> 취소</span>';
+    wrap.appendChild(textarea);
+    wrap.appendChild(hint);
+    textSpan.replaceWith(wrap);
+    textarea.focus();
+    textarea.select();
+
+    let finished = false;
+    const finish = (save) => {
+      if (finished) return;
+      finished = true;
+      const newText = textarea.value.trim();
+      if (save && newText !== oldText && newText.length > 0) { subs[idx].txt = newText; updateEditedState(); }
+      const newSpan = document.createElement('span');
+      newSpan.className = 'sub-text';
+      newSpan.textContent = subs[idx].txt;
+      wrap.replaceWith(newSpan);
+      lineEl.classList.remove('editing');
+      if (subs[idx].txt !== originalSubs[idx]?.txt) lineEl.classList.add('modified');
+      else lineEl.classList.remove('modified');
+      editingIdx = null;
+    };
+
+    textarea.addEventListener('blur', () => finish(true));
+    textarea.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.code === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(true); }
+      else if (e.code === 'Escape') { e.preventDefault(); textarea.removeEventListener('blur', finish); textarea.value = oldText; finish(false); }
+    });
+  }
+
+  function highlightsChanged() {
+    if (highlighted.size !== savedHighlights.size) return true;
+    for (const idx of highlighted) { if (!savedHighlights.has(idx)) return true; }
+    return false;
+  }
+
+  function updateEditedState() {
+    const hasEdits = subs.some((s, i) => s.txt !== originalSubs[i]?.txt) || highlightsChanged();
+    document.getElementById('file-name').classList.toggle('edited', hasEdits);
+    saveBtn.classList.toggle('has-edits', hasEdits);
+  }
+
+  // ── 미디어 이벤트 ──
+  media.addEventListener('play',  () => { document.getElementById('play-btn').textContent = '⏸'; });
+  media.addEventListener('pause', () => { document.getElementById('play-btn').textContent = '▶'; savePosition(); });
+
+  media.addEventListener('loadedmetadata', () => {
+    document.getElementById('tot-time').textContent = fmtTime(media.duration);
+    videoWrap.classList.toggle('show', media.videoWidth > 0 && media.videoHeight > 0);
+    if (pendingResume > 0 && pendingResume < media.duration - 5) {
+      media.currentTime = pendingResume;
+      showToast(`${fmtTime(pendingResume)} 지점부터 재개됩니다`, '처음부터', () => { media.currentTime = 0; });
+      pendingResume = 0;
+    }
+  });
+
+  media.addEventListener('ended', () => { if (mediaFileKey) removeFromHistory(mediaFileKey); });
+
+  media.addEventListener('timeupdate', () => {
+    const t = media.currentTime, dur = media.duration || 1;
+    document.getElementById('progress-fill').style.width = (t/dur*100) + '%';
+    document.getElementById('cur-time').textContent = fmtTime(t);
+
+    let idx = -1;
+    for (let i = 0; i < subs.length; i++) { if (t >= subs[i].start && t < subs[i].end) { idx = i; break; } }
+    if (idx === activeIdx) return;
+    activeIdx = idx;
+
+    lineEls.forEach((el, i) => {
+      el.classList.remove('active', 'past');
+      if (i === idx) el.classList.add('active');
+      else if (subs[i].end <= t) el.classList.add('past');
+    });
+
+    if (idx >= 0 && editingIdx === null) lineEls[idx].scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+
+  setInterval(() => { if (!media.paused && media.currentTime > 0) savePosition(); }, 3000);
+  window.addEventListener('beforeunload', e => {
+    savePosition();
+    if (saveBtn.classList.contains('has-edits')) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  });
+
+  document.getElementById('progress-wrap').addEventListener('click', e => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    media.currentTime = ((e.clientX - rect.left) / rect.width) * media.duration;
+  });
+
+  document.getElementById('play-btn').addEventListener('click', () => { media.paused ? media.play() : media.pause(); });
+  videoWrap.addEventListener('click', () => { media.paused ? media.play() : media.pause(); });
+
+  document.querySelectorAll('.speed-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      media.playbackRate = parseFloat(btn.dataset.speed);
+      document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+  });
+
+  layoutBtn.addEventListener('click', () => {
+    const isH = player.classList.toggle('horizontal');
+    layoutBtn.textContent = isH ? '⬍ 상하 배치' : '⬌ 좌우 배치';
+    mediaPanel.style.width = '';
+    mediaPanel.style.height = '';
+  });
+
+  divider.addEventListener('mousedown', e => {
+    e.preventDefault();
+    const isH = player.classList.contains('horizontal');
+    const startPos = isH ? e.clientX : e.clientY;
+    const startSize = isH ? mediaPanel.offsetWidth : mediaPanel.offsetHeight;
+    const total = isH ? player.offsetWidth : player.offsetHeight;
+
+    divider.classList.add('dragging');
+    document.body.classList.add('resizing');
+    document.body.style.cursor = isH ? 'col-resize' : 'row-resize';
+
+    const onMove = ev => {
+      let sz = startSize + (isH ? ev.clientX : ev.clientY) - startPos;
+      sz = Math.max(total * 0.15, Math.min(total * 0.85, sz));
+      if (isH) mediaPanel.style.width = sz + 'px'; else mediaPanel.style.height = sz + 'px';
+    };
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      divider.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      document.body.style.cursor = '';
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.code === 'Space') { e.preventDefault(); media.paused ? media.play() : media.pause(); }
+    if (e.code === 'ArrowLeft')  { e.preventDefault(); media.currentTime = Math.max(0, media.currentTime - 5); }
+    if (e.code === 'ArrowRight') { e.preventDefault(); media.currentTime = Math.min(media.duration, media.currentTime + 5); }
+  });
+
+  function resetAll() {
+    savePosition();
+    media.pause(); media.src = '';
+    mediaFileKey = null; pendingResume = 0;
+    videoWrap.classList.remove('show');
+    player.classList.remove('horizontal');
+    mediaPanel.style.width = ''; mediaPanel.style.height = '';
+    layoutBtn.textContent = '⬌ 좌우 배치';
+    mediaReady = false; srtReady = false; srtManuallySet = false;
+    highlighted = new Set(); savedHighlights = new Set(); highlightMode = false;
+    highlightBtn.classList.remove('hl-on'); highlightBtn.textContent = '🖊 형광펜';
+    subFontSize = 16; applyFontSize();
+    subs = []; originalSubs = []; lineEls = []; activeIdx = -1; editingIdx = null;
+    media.playbackRate = 1;
+    document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('.speed-btn[data-speed="1"]').classList.add('active');
+    document.getElementById('box-media').classList.remove('done');
+    document.getElementById('box-srt').classList.remove('done');
+    document.getElementById('media-name').textContent = 'MP3, M4A, WAV, WebM, MP4 등';
+    document.getElementById('srt-name').textContent = '자동 매칭이 안 될 때만 지정';
+    document.getElementById('start-btn').disabled = true;
+    document.getElementById('setup').style.display = 'flex';
+    player.classList.remove('active');
+    document.getElementById('reset-btn').style.display = 'none';
+    document.getElementById('file-name').classList.remove('edited');
+    saveBtn.classList.remove('has-edits');
+    inputMedia.value = ''; inputSRT.value = '';
+    hideToast();
+    renderRecentList();
+  }
+
+  renderRecentList();
+</script>
+</body>
+</html>
