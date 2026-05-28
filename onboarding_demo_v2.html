@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>채널 시작하기</title>
+<style>
+  /* 카카오톡 인앱 바텀시트 스타일 (위치 전송, 옵션 선택, 원클릭 결제 참고) */
+  :root{
+    --yellow:#FEE500;
+    --yellow-press:#F0D900;
+    --bg:#FFFFFF;
+    --soft:#F7F8FA;
+    --line:#EFEFEF;
+    --line-strong:#E5E5E5;
+    --text:#191919;
+    --sub:#8B8B8B;
+    --done:#26B665;
+    --dim:#B5BAC2;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:#0E0E10;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif;
+    -webkit-font-smoothing:antialiased}
+  body{display:flex;justify-content:center}
+
+  .device{
+    width:100%;max-width:430px;background:var(--bg);
+    height:100vh;height:100dvh;
+    display:flex;flex-direction:column;overflow:hidden;position:relative;
+  }
+
+  /* 핸들 + 타이틀 헤더 (바텀시트 룩) */
+  .handle{
+    flex:0 0 auto;display:flex;justify-content:center;padding:8px 0 4px;
+  }
+  .handle i{
+    width:36px;height:4px;border-radius:2px;background:#D9D9D9;
+  }
+  .header{
+    flex:0 0 auto;text-align:center;padding:14px 16px 10px;
+    font-size:16px;font-weight:700;letter-spacing:-.2px;
+  }
+
+  /* 스크롤 영역 */
+  .scroll{
+    flex:1;min-height:0;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+    padding-bottom:12px;
+  }
+
+  .intro{padding:4px 22px 14px}
+  .step-bar{display:flex;gap:6px;margin-bottom:10px}
+  .step-bar i{flex:1;height:3px;background:#EFEFEF;border-radius:2px;transition:background .25s ease}
+  .step-bar i.on{background:var(--done)}
+  h1{font-size:18px;line-height:1.35;font-weight:800;margin:6px 0 4px;letter-spacing:-.3px}
+  .lead{margin:0;color:var(--sub);font-size:13px;line-height:1.5}
+
+  /* row list (label-value 룩) */
+  .list{padding:0 8px}
+  .row{
+    display:flex;align-items:center;gap:14px;
+    padding:16px 14px;border-bottom:1px solid var(--line);
+    transition:background .2s ease;
+  }
+  .row:last-child{border-bottom:none}
+  .ico{
+    width:38px;height:38px;border-radius:50%;background:#F4F5F7;
+    display:grid;place-items:center;font-size:18px;flex:0 0 auto;
+    transition:all .25s ease;
+  }
+  .body{flex:1;min-width:0}
+  .body h3{margin:0 0 2px;font-size:15px;font-weight:600;line-height:1.3;color:var(--text)}
+  .body p{margin:0;font-size:13px;color:var(--sub);line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .row.done .ico{background:#E9F8EF;color:var(--done)}
+  .row.done .body p{color:var(--done);font-weight:600}
+  @keyframes mark{0%{transform:scale(.6);opacity:.4}60%{transform:scale(1.18)}100%{transform:scale(1)}}
+  .row.done .ico{animation:mark .35s ease both}
+
+  /* 카드 내 보조 버튼: 카톡 다음/완료 버튼처럼 작은 pill 형태 */
+  .btn-card{
+    flex:0 0 auto;background:var(--yellow);color:#191919;border:0;
+    padding:8px 14px;border-radius:999px;font-size:13px;font-weight:700;
+    white-space:nowrap;cursor:pointer;transition:background .15s ease,transform .1s ease;
+  }
+  .btn-card:active{transform:scale(.97);background:var(--yellow-press)}
+  .btn-card .short{display:none}
+  @media (max-width:380px){
+    .btn-card .full{display:none}
+    .btn-card .short{display:inline}
+    .btn-card{padding:8px 12px}
+  }
+
+  /* 하단 풀폭 CTA (위치정보 보내기 / 1,000원 결제하기 스타일) */
+  .bottom{
+    flex:0 0 auto;background:#fff;
+    padding:0;
+    padding-bottom:env(safe-area-inset-bottom);
+    border-top:1px solid var(--line);
+  }
+  .btn{
+    width:100%;border:0;background:var(--yellow);color:#191919;font-weight:700;
+    padding:18px 16px;font-size:16px;cursor:pointer;
+    transition:background .15s ease;
+    border-radius:0;
+  }
+  .btn:active{background:var(--yellow-press)}
+
+  /* 축하 오버레이 — 동일한 바텀시트 룩으로 정렬 */
+  .celebrate{
+    position:absolute;inset:0;background:rgba(0,0,0,.45);
+    display:none;align-items:flex-end;justify-content:center;z-index:90;
+  }
+  .celebrate.show{display:flex;animation:fade .25s ease}
+  .sheet{
+    width:100%;background:#fff;border-radius:18px 18px 0 0;
+    padding:8px 0 0;animation:slideUp .3s cubic-bezier(.2,.9,.3,1);
+    overflow:hidden;
+  }
+  .sheet .handle{padding:8px 0 4px}
+  .sheet .h-title{text-align:center;font-size:16px;font-weight:700;padding:8px 16px 4px}
+  .sheet .content{padding:14px 24px 22px;text-align:center}
+  .sheet .big{font-size:54px;display:block;margin-bottom:6px;animation:pop .55s cubic-bezier(.2,1.4,.5,1)}
+  .sheet h2{margin:4px 0 6px;font-size:18px;font-weight:800}
+  .sheet p{margin:0 0 4px;color:var(--sub);font-size:13px;line-height:1.5}
+  .sheet .row-btn{display:flex;border-top:1px solid var(--line)}
+  .sheet .row-btn button{
+    flex:1;border:0;background:#fff;padding:18px;font-size:15px;font-weight:700;
+    color:var(--text);cursor:pointer;
+  }
+  .sheet .row-btn button.primary{background:var(--yellow)}
+  .sheet .row-btn button.primary:active{background:var(--yellow-press)}
+  .sheet .row-btn button + button{border-left:1px solid var(--line)}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes slideUp{from{transform:translateY(40px);opacity:.6}to{transform:translateY(0);opacity:1}}
+  @keyframes pop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.15);opacity:1}100%{transform:scale(1)}}
+</style>
+</head>
+<body>
+<div class="device" id="app">
+
+  <div class="handle"><i></i></div>
+  <div class="header">채널 시작하기</div>
+
+  <div class="scroll">
+    <div class="intro">
+      <div class="step-bar" id="stepbar"><i></i><i></i><i></i></div>
+      <h1 id="title">채널 개설을 축하합니다 🎉</h1>
+      <p class="lead" id="lead">고객을 만나기 위해 기본 설정부터 해볼까요?</p>
+    </div>
+
+    <div class="list" id="stack">
+      <div class="row" data-key="public">
+        <div class="ico">📣</div>
+        <div class="body"><h3>채널 공개</h3><p class="desc">이용자가 채널에 방문할 수 있어요</p></div>
+        <button class="btn-card" data-action="public">
+          <span class="full">공개 설정하기</span><span class="short">공개 설정</span>
+        </button>
+      </div>
+      <div class="row" data-key="search">
+        <div class="ico">🔍</div>
+        <div class="body"><h3>검색 허용</h3><p class="desc">카카오톡에서 채널을 찾을 수 있어요</p></div>
+        <button class="btn-card" data-action="search">
+          <span class="full">검색 허용하기</span><span class="short">검색 허용</span>
+        </button>
+      </div>
+      <div class="row" data-key="chat">
+        <div class="ico">💬</div>
+        <div class="body"><h3>채팅 사용</h3><p class="desc">고객과 실시간으로 대화할 수 있어요</p></div>
+        <button class="btn-card" data-action="chat">
+          <span class="full">채팅 사용하기</span><span class="short">채팅 사용</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <button class="btn" onclick="goPartner()">파트너센터에서 더 보기</button>
+  </div>
+
+  <div class="celebrate" id="celebrate" onclick="if(event.target===this)closeCelebrate()">
+    <div class="sheet">
+      <div class="handle"><i></i></div>
+      <div class="h-title">설정 완료</div>
+      <div class="content">
+        <span class="big">🎊</span>
+        <h2>준비 끝!</h2>
+        <p>더 많은 기능과 팁을 만나러 가볼까요?</p>
+      </div>
+      <div class="row-btn">
+        <button onclick="closeCelebrate()">나중에</button>
+        <button class="primary" onclick="goPartner()">파트너센터 가기</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const KEYS=['public','search','chat'];
+  const state={public:false,search:false,chat:false};
+
+  const stepbar=document.getElementById('stepbar').querySelectorAll('i');
+  const title=document.getElementById('title');
+  const lead=document.getElementById('lead');
+
+  function complete(key){
+    if(state[key])return;
+    state[key]=true;
+    const card=document.querySelector(`.row[data-key="${key}"]`);
+    card.classList.add('done');
+    card.querySelector('.ico').textContent='✓';
+    card.querySelector('.desc').textContent='완료';
+    const btn=card.querySelector('.btn-card');
+    if(btn)btn.remove();
+    updateHeader();
+    if(KEYS.every(k=>state[k]))setTimeout(openCelebrate,400);
+  }
+
+  function updateHeader(){
+    const n=KEYS.filter(k=>state[k]).length;
+    stepbar.forEach((el,i)=>el.classList.toggle('on',i<n));
+    if(n===0){
+      title.innerHTML='채널 개설을 축하합니다 🎉';
+      lead.textContent='고객을 만나기 위해 기본 설정부터 해볼까요?';
+    }else if(n<3){
+      title.textContent='거의 다 왔어요!';
+      lead.textContent=`이제 ${3-n}가지만 더 설정하면 끝나요.`;
+    }else{
+      title.innerHTML='기본 설정이 끝났어요 👋';
+      lead.textContent='아주 좋은 출발이에요.';
+    }
+  }
+
+  document.querySelectorAll('.btn-card').forEach(b=>{
+    b.addEventListener('click',()=>complete(b.dataset.action));
+  });
+
+  function openCelebrate(){document.getElementById('celebrate').classList.add('show')}
+  function closeCelebrate(){document.getElementById('celebrate').classList.remove('show')}
+
+  function goPartner(){
+    if(confirm('파트너센터로 이동할까요?\n현재 페이지를 벗어나 초기 상태로 돌아갑니다.')){
+      closeCelebrate();
+      resetAll();
+    }
+  }
+
+  function resetAll(){
+    KEYS.forEach(k=>state[k]=false);
+    const data={
+      public:{ico:'📣',title:'채널 공개',desc:'이용자가 채널에 방문할 수 있어요',full:'공개 설정하기',short:'공개 설정'},
+      search:{ico:'🔍',title:'검색 허용',desc:'카카오톡에서 채널을 찾을 수 있어요',full:'검색 허용하기',short:'검색 허용'},
+      chat:  {ico:'💬',title:'채팅 사용',desc:'고객과 실시간으로 대화할 수 있어요',full:'채팅 사용하기',short:'채팅 사용'}
+    };
+    document.querySelectorAll('.row').forEach(card=>{
+      const k=card.dataset.key,d=data[k];
+      card.classList.remove('done');
+      card.querySelector('.ico').textContent=d.ico;
+      card.querySelector('.body h3').textContent=d.title;
+      card.querySelector('.desc').textContent=d.desc;
+      if(!card.querySelector('.btn-card')){
+        const btn=document.createElement('button');
+        btn.className='btn-card';
+        btn.dataset.action=k;
+        btn.innerHTML=`<span class="full">${d.full}</span><span class="short">${d.short}</span>`;
+        btn.addEventListener('click',()=>complete(k));
+        card.appendChild(btn);
+      }
+    });
+    updateHeader();
+  }
+</script>
+</body>
+</html>
