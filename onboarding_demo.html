@@ -60,6 +60,16 @@
   .card.done .ico{background:#E9F8EF;border-color:#cdeed7;color:var(--done)}
   .card.done .body p{color:var(--done);font-weight:600}
 
+  /* 선행 조건 미충족(잠금) 상태 */
+  .card.locked{background:#F4F5F7}
+  .card.locked .ico{background:#ECEEF1;border-color:#E0E3E8;color:#B0B4BA}
+  .card.locked h3{color:#A8AAB0}
+  .card.locked p{color:#B0B4BA}
+  .btn-card.disabled{
+    background:#E5E7EB;color:#9aa0a6;cursor:not-allowed;
+  }
+  .btn-card.disabled:active{transform:none;background:#E5E7EB}
+
   /* 카드 내 CTA 버튼 */
   .btn-card{
     flex:0 0 auto;background:var(--yellow);color:#191919;border:0;
@@ -220,18 +230,35 @@
     });
   });
 
+  // 선행 조건: 검색/채팅은 '채널 공개' 후에만 가능
+  function requires(key){
+    return (key==='search'||key==='chat') ? ['public'] : [];
+  }
+  function isUnlocked(key){
+    return requires(key).every(r=>state[r]);
+  }
+
   function complete(key){
     if(state[key])return;
+    if(!isUnlocked(key)){
+      alert('먼저 채널을 공개해 주세요.\n검색 허용과 채팅 사용은 채널 공개 후 설정할 수 있어요.');
+      return;
+    }
     state[key]=true;
     const card=document.querySelector(`.card[data-key="${key}"]`);
+    card.classList.remove('locked');
     card.classList.add('done');
     card.querySelector('.ico').textContent='✓';
     card.querySelector('.desc').textContent='완료';
     const btn=card.querySelector('.btn-card');
     if(btn)btn.remove();
+    refreshLocks();
     updateHeader();
     if(KEYS.every(k=>state[k]))setTimeout(openCelebrate,400);
   }
+
+  // 잠금 UI는 사용하지 않음 — 클릭 시 알럿만 노출. 함수는 호환을 위해 비워둠.
+  function refreshLocks(){}
 
   function updateHeader(){
     const n=KEYS.filter(k=>state[k]).length;
@@ -253,6 +280,9 @@
     b.addEventListener('click',()=>complete(b.dataset.action));
   });
 
+  // 초기 잠금 상태 반영
+  refreshLocks();
+
   function openCelebrate(){document.getElementById('celebrate').classList.add('show')}
   function closeCelebrate(){document.getElementById('celebrate').classList.remove('show')}
   function goPartner(){
@@ -273,6 +303,7 @@
     document.querySelectorAll('.card').forEach(card=>{
       const k=card.dataset.key,d=data[k];
       card.classList.remove('done');
+      card.classList.remove('locked');
       card.querySelector('.ico').textContent=d.ico;
       card.querySelector('.body h3').textContent=d.title;
       card.querySelector('.desc').textContent=d.desc;
@@ -285,6 +316,7 @@
         card.appendChild(btn);
       }
     });
+    refreshLocks();
     updateHeader();
   }
 </script>
