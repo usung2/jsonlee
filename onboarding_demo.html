@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>채널 시작하기</title>
+<style>
+  :root{
+    --yellow:#FEE500;
+    --yellow-press:#F0D900;
+    --bg:#FFFFFF;
+    --soft:#F7F8FA;
+    --line:#ECEEF1;
+    --text:#191919;
+    --sub:#7C828A;
+    --done:#26B665;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%;background:#0E0E10;color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",sans-serif}
+  body{display:flex;justify-content:center}
+
+  .device{
+    width:100%;max-width:430px;background:var(--bg);
+    height:100vh;height:100dvh;
+    display:flex;flex-direction:column;overflow:hidden;position:relative;
+  }
+
+  /* 상단 영역(스크롤되는 부분) */
+  .scroll{
+    flex:1;min-height:0;overflow-y:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+
+  .top{padding:20px 20px 8px}
+  .step-bar{display:flex;gap:6px;margin-bottom:14px}
+  .step-bar i{flex:1;height:3px;background:#ECEEF1;border-radius:2px;transition:background .25s ease}
+  .step-bar i.on{background:var(--done)}
+
+  h1{font-size:21px;line-height:1.3;font-weight:800;margin:0 0 4px;letter-spacing:-.3px}
+  .lead{margin:0;color:var(--sub);font-size:13px}
+
+  .stack{padding:8px 14px 20px;display:flex;flex-direction:column;gap:8px}
+
+  .card{
+    background:var(--soft);border-radius:12px;padding:12px;
+    display:flex;align-items:center;gap:10px;
+    transition:background .25s ease;
+  }
+  .ico{
+    width:36px;height:36px;border-radius:10px;background:#fff;display:grid;place-items:center;
+    font-size:17px;flex:0 0 auto;border:1px solid var(--line);
+    transition:all .25s ease;
+  }
+  .body{flex:1;min-width:0}
+  .body h3{margin:0 0 2px;font-size:14px;font-weight:700;line-height:1.3}
+  .body p{margin:0;font-size:12px;color:var(--sub);line-height:1.4;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+  .card.done .ico{background:#E9F8EF;border-color:#cdeed7;color:var(--done)}
+  .card.done .body p{color:var(--done);font-weight:600}
+
+  .card.locked .ico{background:#F1F3F5;border-color:#E6E8EB;color:#aaa}
+  .card.locked h3,.card.locked p{color:#a8aab0}
+
+  /* 카드 내 CTA 버튼 */
+  .btn-card{
+    flex:0 0 auto;background:var(--yellow);color:#191919;border:0;
+    padding:9px 14px;border-radius:8px;font-size:13px;font-weight:700;
+    white-space:nowrap;cursor:pointer;transition:background .15s ease,transform .1s ease;
+  }
+  .btn-card:active{transform:scale(.97);background:var(--yellow-press)}
+  .btn-card.disabled{background:#F1F3F5;color:#9aa0a6;cursor:not-allowed}
+  .btn-card .short{display:none}
+
+  /* 좁은 폭에선 줄임 라벨로 자동 전환 */
+  @media (max-width:380px){
+    .btn-card .full{display:none}
+    .btn-card .short{display:inline}
+    .btn-card{padding:9px 12px}
+  }
+
+  /* 하단 고정 영역 */
+  .bottom{
+    flex:0 0 auto;padding:12px 16px 16px;
+    padding-bottom:calc(16px + env(safe-area-inset-bottom));
+    background:#fff;border-top:1px solid var(--line);
+  }
+  .btn{
+    width:100%;border:0;background:var(--yellow);color:#191919;font-weight:700;
+    padding:14px;border-radius:12px;font-size:15px;cursor:pointer;
+    transition:background .15s ease,transform .1s ease;
+  }
+  .btn:active{transform:scale(.99);background:var(--yellow-press)}
+  .btn.ghost{background:transparent;color:var(--sub);font-weight:600}
+
+  /* 축하 오버레이 */
+  .celebrate{
+    position:absolute;inset:0;background:#fff;display:none;flex-direction:column;
+    align-items:center;justify-content:center;z-index:90;padding:0 28px;text-align:center;
+  }
+  .celebrate.show{display:flex;animation:fade .3s ease}
+  .celebrate .big{font-size:64px;margin-bottom:6px;animation:pop .6s cubic-bezier(.2,1.4,.5,1)}
+  .celebrate h2{margin:0 0 6px;font-size:22px;font-weight:800}
+  .celebrate p{margin:0 0 24px;color:var(--sub);font-size:14px;line-height:1.5}
+  .celebrate .row{display:flex;gap:8px;width:100%;max-width:340px}
+  .celebrate .row .btn{flex:1}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  @keyframes pop{0%{transform:scale(.5);opacity:0}60%{transform:scale(1.15);opacity:1}100%{transform:scale(1)}}
+
+  /* 카드 완료 시 살짝 강조 애니메이션 */
+  @keyframes mark{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.2);opacity:1}100%{transform:scale(1)}}
+  .card.done .ico{animation:mark .35s ease both}
+</style>
+</head>
+<body>
+<div class="device" id="app">
+
+  <div class="scroll">
+    <div class="top">
+      <div class="step-bar" id="stepbar"><i></i><i></i><i></i></div>
+      <h1 id="title">채널 개설을 축하합니다 🎉</h1>
+      <p class="lead" id="lead">고객을 만나기 위해 기본 설정부터 해볼까요?</p>
+    </div>
+
+    <div class="stack" id="stack">
+      <div class="card" data-key="public">
+        <div class="ico">📣</div>
+        <div class="body"><h3>채널 공개</h3><p class="desc">이용자가 채널에 방문할 수 있어요</p></div>
+        <button class="btn-card" data-action="public">
+          <span class="full">공개 설정하기</span><span class="short">공개 설정</span>
+        </button>
+      </div>
+      <div class="card" data-key="search">
+        <div class="ico">🔍</div>
+        <div class="body"><h3>검색 허용</h3><p class="desc">카카오톡에서 채널을 찾을 수 있어요</p></div>
+        <button class="btn-card" data-action="search">
+          <span class="full">검색 허용하기</span><span class="short">검색 허용</span>
+        </button>
+      </div>
+      <div class="card" data-key="chat">
+        <div class="ico">💬</div>
+        <div class="body"><h3>채팅 사용</h3><p class="desc">고객과 실시간으로 대화할 수 있어요</p></div>
+        <button class="btn-card" data-action="chat">
+          <span class="full">채팅 사용하기</span><span class="short">채팅 사용</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <button class="btn" onclick="alert('파트너센터로 이동합니다')">파트너센터에서 더 보기</button>
+  </div>
+
+  <div class="celebrate" id="celebrate">
+    <div class="big">🎊</div>
+    <h2>준비 끝!</h2>
+    <p>더 많은 기능 켜러 가볼까요?</p>
+    <div class="row">
+      <button class="btn ghost" onclick="resetAll()">나중에</button>
+      <button class="btn" onclick="alert('파트너센터로 이동합니다')">파트너센터 가기</button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const KEYS=['public','search','chat'];
+  const state={public:false,search:false,chat:false};
+
+  const cards=document.querySelectorAll('.card');
+  const stepbar=document.getElementById('stepbar').querySelectorAll('i');
+  const title=document.getElementById('title');
+  const lead=document.getElementById('lead');
+
+  function complete(key){
+    if(state[key])return;
+    state[key]=true;
+    const card=document.querySelector(`.card[data-key="${key}"]`);
+    card.classList.add('done');
+    card.querySelector('.ico').textContent='✓';
+    card.querySelector('.desc').textContent='완료';
+    const btn=card.querySelector('.btn-card');
+    if(btn)btn.remove();
+    updateHeader();
+    if(KEYS.every(k=>state[k]))setTimeout(openCelebrate,400);
+  }
+
+  function updateHeader(){
+    const n=KEYS.filter(k=>state[k]).length;
+    stepbar.forEach((el,i)=>el.classList.toggle('on',i<n));
+    if(n===0){
+      title.innerHTML='채널 개설을 축하합니다 🎉';
+      lead.textContent='고객을 만나기 위해 기본 설정부터 해볼까요?';
+    }else if(n<3){
+      title.textContent='거의 다 왔어요!';
+      lead.textContent=`이제 ${3-n}가지만 더 설정하면 끝나요.`;
+    }else{
+      title.innerHTML='기본 설정이 끝났어요 👋';
+      lead.textContent='아주 좋은 출발이에요.';
+    }
+  }
+
+  document.querySelectorAll('.btn-card').forEach(b=>{
+    b.addEventListener('click',()=>complete(b.dataset.action));
+  });
+
+  function openCelebrate(){document.getElementById('celebrate').classList.add('show')}
+  function closeCelebrate(){document.getElementById('celebrate').classList.remove('show')}
+
+  function resetAll(){
+    KEYS.forEach(k=>state[k]=false);
+    closeCelebrate();
+    // 카드 원상복구
+    const data={
+      public:{ico:'📣',title:'채널 공개',desc:'이용자가 채널에 방문할 수 있어요',full:'공개 설정하기',short:'공개 설정'},
+      search:{ico:'🔍',title:'검색 허용',desc:'카카오톡에서 채널을 찾을 수 있어요',full:'검색 허용하기',short:'검색 허용'},
+      chat:  {ico:'💬',title:'채팅 사용',desc:'고객과 실시간으로 대화할 수 있어요',full:'채팅 사용하기',short:'채팅 사용'}
+    };
+    cards.forEach(card=>{
+      const k=card.dataset.key,d=data[k];
+      card.classList.remove('done');
+      card.querySelector('.ico').textContent=d.ico;
+      card.querySelector('.body h3').textContent=d.title;
+      card.querySelector('.desc').textContent=d.desc;
+      // 버튼 다시 추가
+      if(!card.querySelector('.btn-card')){
+        const btn=document.createElement('button');
+        btn.className='btn-card';
+        btn.dataset.action=k;
+        btn.innerHTML=`<span class="full">${d.full}</span><span class="short">${d.short}</span>`;
+        btn.addEventListener('click',()=>complete(k));
+        card.appendChild(btn);
+      }
+    });
+    updateHeader();
+  }
+</script>
+</body>
+</html>
