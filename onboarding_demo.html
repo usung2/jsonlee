@@ -149,16 +149,16 @@
   </div>
 
   <div class="bottom">
-    <button class="btn" onclick="alert('파트너센터로 이동합니다')">파트너센터에서 더 보기</button>
+    <button class="btn" onclick="goPartner()">파트너센터에서 더 보기</button>
   </div>
 
   <div class="celebrate" id="celebrate">
     <div class="big">🎊</div>
     <h2>준비 끝!</h2>
-    <p>더 많은 기능 켜러 가볼까요?</p>
+    <p>더 많은 기능과 팁을 만나러 가볼까요?</p>
     <div class="row">
-      <button class="btn ghost" onclick="resetAll()">나중에</button>
-      <button class="btn" onclick="alert('파트너센터로 이동합니다')">파트너센터 가기</button>
+      <button class="btn ghost" onclick="closeCelebrate()">나중에</button>
+      <button class="btn" onclick="goPartner()">파트너센터 가기</button>
     </div>
   </div>
 
@@ -207,6 +207,12 @@
 
   function openCelebrate(){document.getElementById('celebrate').classList.add('show')}
   function closeCelebrate(){document.getElementById('celebrate').classList.remove('show')}
+  function goPartner(){
+    if(confirm('파트너센터로 이동할까요?\n현재 페이지를 벗어나 초기 상태로 돌아갑니다.')){
+      closeCelebrate();
+      resetAll();
+    }
+  }
 
   function resetAll(){
     KEYS.forEach(k=>state[k]=false);
