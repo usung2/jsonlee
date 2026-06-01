@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>카카오비즈니스 — 이번 주 업종 트렌드 (초안 B 데모)</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", Pretendard, sans-serif; background: #f4f5f7; color: #1f242a; }
+  a { color: inherit; }
+
+  /* top bar mimicking kakao business shell */
+  .topbar { background: #fff; border-bottom: 1px solid #e8eaed; padding: 12px 24px; display:flex; align-items:center; gap:18px; }
+  .topbar .logo { font-weight: 800; font-size: 14px; color: #3c1e1e; }
+  .topbar .logo span { color:#fae100; background:#3c1e1e; padding:2px 6px; border-radius:4px; margin-right:6px;}
+  .topbar nav { display:flex; gap:14px; font-size: 13px; color:#5a606a; }
+  .topbar nav b { color:#1f242a; }
+  .topbar .right { margin-left:auto; font-size:12px; color:#6b7178; }
+
+  .layout { display:grid; grid-template-columns: 220px 1fr; gap: 0; min-height: calc(100vh - 49px); }
+  aside { background:#fff; border-right:1px solid #e8eaed; padding: 20px 14px; }
+  aside .me { padding: 8px 10px; border-radius: 8px; background:#f7f8fa; font-size:13px; font-weight:700; margin-bottom:14px; display:flex; align-items:center; justify-content:space-between;}
+  aside .me .arrow { color:#9aa0a8; }
+  aside ul { list-style:none; padding:0; margin:0; }
+  aside li { padding: 9px 10px; font-size:13px; color:#5a606a; border-radius:6px; cursor:pointer; }
+  aside li.active { background:#fff8d6; color:#3c1e1e; font-weight:700; }
+  aside li:hover { background:#f4f5f7; }
+
+  main { padding: 24px 28px 80px; max-width: 1080px; }
+  .crumb { font-size:12px; color:#8b9098; margin-bottom:14px; }
+  h1.page-title { font-size: 22px; margin: 0 0 4px; }
+  .sub { color:#6b7178; font-size:13px; margin: 0 0 18px; }
+
+  /* control row */
+  .controls { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
+  .seg { display:inline-flex; background:#fff; border:1px solid #e3e5e8; border-radius:8px; overflow:hidden; }
+  .seg button { background:transparent; border:none; padding:8px 14px; font-size:13px; cursor:pointer; color:#5a606a; }
+  .seg button.on { background:#1f242a; color:#fff; }
+  select, .pick { background:#fff; border:1px solid #e3e5e8; border-radius:8px; padding:8px 10px; font-size:13px; color:#1f242a; }
+  .meta { margin-left:auto; font-size:12px; color:#8b9098; }
+  .reload { background:#fff; border:1px solid #e3e5e8; border-radius:8px; padding:8px 12px; font-size:12px; cursor:pointer; }
+  .reload:hover { background:#f7f8fa; }
+
+  /* trend grid */
+  .grid { display:grid; grid-template-columns: repeat(3, 1fr); gap:14px; }
+  .card { background:#fff; border:1px solid #e8eaed; border-radius:12px; padding:16px; display:flex; flex-direction:column; min-height: 220px; cursor:pointer; transition: box-shadow .15s, transform .15s; }
+  .card:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.06); transform: translateY(-1px); }
+  .card .head { display:flex; align-items:center; gap:6px; font-size:12px; color:#8b9098; margin-bottom:8px; }
+  .card .big { font-size: 18px; font-weight: 800; margin-bottom: 6px; line-height: 1.3; }
+  .card .desc { font-size: 13px; color:#5a606a; line-height:1.5; }
+  .card .pills { margin-top:auto; padding-top:10px; }
+  .pill { display:inline-block; background:#fff8d6; color:#7a5a00; padding:3px 8px; border-radius:10px; font-size:11px; margin-right:4px; margin-top:4px; }
+  .delta { font-weight:800; }
+  .delta.up { color:#0a8554; }
+  .delta.down { color:#c43a3a; }
+
+  /* big two row */
+  .grid.two { grid-template-columns: 1.3fr 1fr; }
+  .grid.two .card { min-height: 240px; }
+  .ranklist { font-size:13px; color:#3a3f47; }
+  .ranklist .row { display:flex; align-items:center; padding:6px 0; border-bottom:1px dashed #eef0f2; }
+  .ranklist .row:last-child { border-bottom: none; }
+  .ranklist .rank { width:22px; font-weight:800; color:#a06b00; }
+  .ranklist .name { flex:1; }
+  .ranklist .val { color:#0a8554; font-weight:700; }
+
+  /* drawer */
+  .drawer-bg { position:fixed; inset:0; background:rgba(0,0,0,.4); display:none; z-index:50; }
+  .drawer-bg.on { display:block; }
+  .drawer { position:fixed; right:0; top:0; bottom:0; width: 480px; max-width: 92vw; background:#fff; box-shadow:-8px 0 24px rgba(0,0,0,.1); transform:translateX(100%); transition:transform .25s; z-index:60; display:flex; flex-direction:column; }
+  .drawer.on { transform:translateX(0); }
+  .drawer header { padding:18px 20px; border-bottom:1px solid #eef0f2; display:flex; align-items:center; justify-content:space-between;}
+  .drawer header h3 { margin:0; font-size:16px;}
+  .drawer .close { background:none; border:none; font-size:20px; cursor:pointer; color:#8b9098;}
+  .drawer .body { padding: 18px 20px; overflow:auto; flex:1; font-size:13px; color:#3a3f47; line-height:1.6;}
+  .drawer .body h4 { font-size:13px; color:#8b9098; margin: 18px 0 6px; font-weight:600;}
+  .drawer .body .sample { background:#f7f8fa; border-radius:8px; padding:12px; font-size:13px; margin: 6px 0; border-left: 3px solid #fae100; }
+  .drawer footer { padding:14px 20px; border-top:1px solid #eef0f2; display:flex; gap:8px; }
+  .btn { padding:10px 14px; border-radius:8px; font-size:13px; font-weight:700; border:none; cursor:pointer; }
+  .btn.primary { background:#fae100; color:#1f242a; flex:1; }
+  .btn.ghost { background:#fff; color:#5a606a; border:1px solid #e3e5e8;}
+
+  /* skeleton */
+  .skeleton .big, .skeleton .desc, .skeleton .head, .skeleton .pills { background:#eef0f2; color:transparent; border-radius:4px; animation: pulse 1.2s infinite; }
+  .skeleton .big { height:24px; width:70%; }
+  .skeleton .desc { height:14px; width:90%; margin-top:8px;}
+  .skeleton .head { height:12px; width:40%; }
+  .skeleton .pills { height: 18px; width: 60%; margin-top: auto; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:.55;} }
+
+  .toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:#1f242a; color:#fff; padding:10px 14px; border-radius:8px; font-size:13px; opacity:0; transition: opacity .2s; z-index: 80;}
+  .toast.on { opacity:1; }
+
+  .legend { font-size:11px; color:#8b9098; margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><span>kakao</span>business 파트너센터</div>
+  <nav>
+    <span>파트너</span><span>광고</span><span>판매</span><span>비즈도구</span><span>지원</span>
+  </nav>
+  <div class="right">kakao@kakaocorp.com</div>
+</div>
+
+<div class="layout">
+  <aside>
+    <div class="me">판교춘식당 <span class="arrow">›</span></div>
+    <ul>
+      <li>홈</li>
+      <li>채널</li>
+      <li>매장</li>
+      <li>채팅</li>
+      <li>메시지</li>
+      <li>소식·쿠폰</li>
+      <li>홍보</li>
+      <li>숏폼 스튜디오</li>
+      <li class="active">인사이트 · 트렌드</li>
+      <li>보안</li>
+      <li>카카오톡 스토어</li>
+    </ul>
+  </aside>
+
+  <main>
+    <div class="crumb">홈 › 인사이트 · 트렌드 › 이번 주 업종 트렌드</div>
+    <h1 class="page-title">이번 주 같은 업종 트렌드</h1>
+    <p class="sub">우리 채널과 같은 업종에서 일어나는 일을 매주 갱신해 보여드립니다. 광고 결제와 무관해요.</p>
+
+    <div class="controls">
+      <div class="seg" id="rangeSeg">
+        <button data-range="7" class="on">최근 7일</button>
+        <button data-range="14">14일</button>
+        <button data-range="30">30일</button>
+      </div>
+      <select id="industry">
+        <option value="food">문화·엔터테인먼트 / 외식</option>
+        <option value="beauty">뷰티·화장품</option>
+        <option value="retail">패션·리테일</option>
+        <option value="edu">교육·학원</option>
+      </select>
+      <span class="meta" id="lastUpdated">2026-06-01 09:00 갱신</span>
+      <button class="reload" id="reload">↻ 새로고침</button>
+    </div>
+
+    <!-- Row 1: 3 trend cards -->
+    <div class="grid" id="row1"></div>
+
+    <div style="height:14px;"></div>
+
+    <!-- Row 2: 2 detail cards -->
+    <div class="grid two" id="row2"></div>
+
+    <p class="legend">* 모든 수치는 같은 업종 카카오 채널 운영자의 익명·집계 데이터를 기반으로 합니다. 표본 30개 미만 카테고리는 표시하지 않습니다.</p>
+  </main>
+</div>
+
+<!-- Drawer -->
+<div class="drawer-bg" id="drawerBg"></div>
+<aside class="drawer" id="drawer">
+  <header>
+    <h3 id="drawerTitle">상세</h3>
+    <button class="close" id="drawerClose">×</button>
+  </header>
+  <div class="body" id="drawerBody"></div>
+  <footer>
+    <button class="btn ghost" id="drawerLater">나중에 보기</button>
+    <button class="btn primary" id="drawerApply">지금 적용해보기</button>
+  </footer>
+</aside>
+
+<div class="toast" id="toast">적용 페이지로 이동합니다.</div>
+
+<script>
+// ---- mock data per industry ----
+const DATA = {
+  food: {
+    label: "문화·엔터테인먼트 / 외식",
+    cards: [
+      {
+        id: "msg",
+        head: "📈 메시지 유형 트렌드",
+        big: "쿠폰 발송 +34%",
+        desc: "같은 업종 채널이 이번 주 가장 많이 보낸 메시지는 한정 쿠폰이에요.",
+        pills: ["쿠폰", "한정수량", "주말 한정"],
+        detail: {
+          title: "쿠폰 발송이 떠오르는 이유",
+          body: `<p>최근 7일간 외식업 카카오 채널 1,243곳의 메시지 발송 데이터를 보면, <b>쿠폰형 메시지 비중이 직전 주 대비 +34%</b> 늘었어요. 특히 주말을 앞둔 목·금요일 발송이 +52%로 두드러집니다.</p>
+            <h4>잘 먹히는 패턴</h4>
+            <div class="sample">"이번 주말만! 디너 메뉴 15% 할인 — 친구만 받는 쿠폰입니다 🎟️"</div>
+            <div class="sample">"오늘 18시까지만 — 사이드 1+1 쿠폰을 보냈어요"</div>
+            <h4>주의</h4>
+            <p>같은 업종 평균 발송 빈도는 주 1.4회. 주 3회를 넘기면 친구 차단율이 빠르게 올라갑니다.</p>`
+        }
+      },
+      {
+        id: "growth",
+        head: "🚀 친구 수 증가 톱5",
+        big: "상위 채널 평균 +18%",
+        desc: "이번 주 친구 수가 가장 많이 늘어난 외식 채널 톱5의 공통점은 친구 행사·인플루언서 협업·신규 매장 오픈이에요.",
+        pills: ["친구 행사", "인플루언서", "오픈 이벤트"],
+        detail: {
+          title: "친구 수가 빨리 느는 채널의 공통점",
+          body: `<p>친구 수 증가율 상위 5%는 평균 <b>+18.2%</b>로, 업종 평균 +1.6%의 11배를 기록했어요.</p>
+          <h4>공통 패턴 3가지</h4>
+          <p>① <b>친구 추가 한정 쿠폰</b> — 채널 진입 시 즉시 발급<br/>② <b>인플루언서 채널 추가 콜투액션</b> — 영상·릴스 끝에 채널 추가 유도<br/>③ <b>오픈 이벤트 시기 집중 발송</b> — 신규 매장 오픈 ±2주에 추가 광고 집중</p>
+          <h4>지금 우리 채널 상태</h4>
+          <p>지난 7일 +0.9% — 업종 평균 대비 약간 낮아요. 친구 추가 배너 노출을 켜면 +3~5%p 개선이 기대됩니다.</p>`
+        }
+      },
+      {
+        id: "tpl",
+        head: "💬 자주 쓰는 알림톡 템플릿",
+        big: "예약 D-1 리마인드 +22%",
+        desc: "예약 전날 자동 발송 템플릿 사용이 지난주 대비 +22% 늘었어요. 노쇼율 감소 효과가 보고되고 있어요.",
+        pills: ["예약", "리마인드", "자동발송"],
+        detail: {
+          title: "'예약 D-1 리마인드' 템플릿이 뜨는 이유",
+          body: `<p>이번 주 외식 업종에서 가장 빠르게 사용량이 늘어난 알림톡 템플릿은 <b>"예약 D-1 리마인드"</b>입니다.</p>
+          <h4>왜 효과적인가</h4>
+          <p>도입 채널의 평균 노쇼율이 <b>11.4% → 6.2%</b>로 줄었다는 케이스가 다수 보고됐어요(자체 보고 기준).</p>
+          <h4>템플릿 예시</h4>
+          <div class="sample">[판교춘식당] 내일 19:00 4인 예약 안내드려요. 변경/취소는 이 메시지에 답장 주세요 🙇</div>`
+        }
+      }
+    ],
+    rank: [
+      { name: "OO식당 (홍대)", val: "+38%" },
+      { name: "△△비스트로 (성수)", val: "+27%" },
+      { name: "□□다이닝 (판교)", val: "+22%" },
+      { name: "◎◎바 (이태원)", val: "+19%" },
+      { name: "✕✕키친 (잠실)", val: "+15%" }
+    ],
+    bench: { 친구추가율: "1.2%", 응답시간: "14분", 메시지오픈율: "31%", 쿠폰사용률: "9.4%" }
+  },
+  beauty: {
+    label: "뷰티·화장품",
+    cards: [
+      { id:"msg", head:"📈 메시지 유형 트렌드", big:"신제품 알림 +41%", desc:"신제품 입고 알림 메시지 비중이 가장 빠르게 증가했어요.", pills:["신제품","입고알림","사전예약"],
+        detail:{ title:"신제품 알림이 뜨는 이유", body:"<p>여름 신제품 시즌과 맞물려 신제품 입고 알림 발송이 +41% 증가했어요.</p>"}},
+      { id:"growth", head:"🚀 친구 수 증가 톱5", big:"상위 채널 평균 +24%", desc:"샘플 증정 이벤트와 라이브 커머스 연동이 친구 수 증가를 견인.", pills:["샘플 증정","라이브커머스"],
+        detail:{ title:"공통 패턴", body:"<p>샘플 증정과 라이브 연동 두 가지가 핵심이에요.</p>"}},
+      { id:"tpl", head:"💬 자주 쓰는 알림톡 템플릿", big:"재입고 알림 +33%", desc:"인기 품절 상품의 재입고 알림 템플릿 사용이 빠르게 늘었어요.", pills:["재입고","품절"],
+        detail:{ title:"재입고 알림", body:"<p>품절 상품 재입고 시 자동 발송이 표준이 되고 있어요.</p>"}}
+    ],
+    rank: [
+      { name:"AA뷰티 (강남)", val:"+44%" }, { name:"BB코스메틱 (성수)", val:"+33%" },
+      { name:"CC스킨 (홍대)", val:"+29%" }, { name:"DD메이크업 (가로수길)", val:"+22%" }, { name:"EE더마 (판교)", val:"+18%" }
+    ],
+    bench: { 친구추가율:"2.1%", 응답시간:"22분", 메시지오픈율:"38%", 쿠폰사용률:"12.7%" }
+  },
+  retail: {
+    label: "패션·리테일",
+    cards: [
+      { id:"msg", head:"📈 메시지 유형 트렌드", big:"시즌 세일 +28%", desc:"여름 시즌 오프 세일 메시지 비중이 빠르게 증가.", pills:["시즌세일","여름","마감"],
+        detail:{title:"시즌 세일",body:"<p>여름 시즌 오프 세일 메시지가 +28% 증가했어요.</p>"}},
+      { id:"growth", head:"🚀 친구 수 증가 톱5", big:"상위 채널 평균 +12%", desc:"룩북 콘텐츠와 친구 한정 쿠폰이 견인.", pills:["룩북","한정쿠폰"],
+        detail:{title:"공통 패턴",body:"<p>룩북 발행 채널이 강세에요.</p>"}},
+      { id:"tpl", head:"💬 자주 쓰는 알림톡 템플릿", big:"배송 출발 알림 +18%", desc:"배송 출발·도착 자동 알림 템플릿이 표준화되고 있어요.", pills:["배송","CS"],
+        detail:{title:"배송 알림",body:"<p>CS 문의 감소 효과가 큽니다.</p>"}}
+    ],
+    rank: [
+      { name:"FF패션 (홍대)", val:"+23%"}, { name:"GG스튜디오 (성수)", val:"+19%"},
+      { name:"HH브랜드 (압구정)", val:"+15%"}, { name:"II컬렉션 (한남)", val:"+11%"}, { name:"JJ샵 (판교)", val:"+9%"}
+    ],
+    bench: { 친구추가율:"1.6%", 응답시간:"31분", 메시지오픈율:"27%", 쿠폰사용률:"7.1%" }
+  },
+  edu: {
+    label: "교육·학원",
+    cards: [
+      { id:"msg", head:"📈 메시지 유형 트렌드", big:"여름특강 모집 +52%", desc:"여름방학 특강 모집 메시지가 가장 빠르게 늘었어요.", pills:["여름특강","모집","조기등록"],
+        detail:{title:"여름특강",body:"<p>방학 시즌과 맞물려 모집 메시지가 +52%.</p>"}},
+      { id:"growth", head:"🚀 친구 수 증가 톱5", big:"상위 채널 평균 +9%", desc:"학부모 대상 무료 설명회와 자료 다운로드가 견인.", pills:["설명회","자료배포"],
+        detail:{title:"공통 패턴",body:"<p>무료 자료 다운로드 동선이 효과적이에요.</p>"}},
+      { id:"tpl", head:"💬 자주 쓰는 알림톡 템플릿", big:"수업 리마인드 +16%", desc:"수업 1시간 전 리마인드 알림이 학원가에서 표준이 되고 있어요.", pills:["수업","리마인드"],
+        detail:{title:"수업 리마인드",body:"<p>출석률 개선 사례가 다수.</p>"}}
+    ],
+    rank: [
+      { name:"KK학원 (대치)", val:"+14%"}, { name:"LL아카데미 (목동)", val:"+11%"},
+      { name:"MM교육 (분당)", val:"+9%"}, { name:"NN스쿨 (판교)", val:"+7%"}, { name:"OO클래스 (송파)", val:"+5%"}
+    ],
+    bench: { 친구추가율:"0.9%", 응답시간:"45분", 메시지오픈율:"42%", 쿠폰사용률:"3.2%" }
+  }
+};
+
+// ---- render ----
+const $ = (s) => document.querySelector(s);
+const row1 = $("#row1");
+const row2 = $("#row2");
+let currentIndustry = "food";
+let currentRange = 7;
+
+function skeletonGrid(el, n, two=false) {
+  el.innerHTML = "";
+  for (let i=0;i<n;i++) {
+    const c = document.createElement("div");
+    c.className = "card skeleton";
+    c.innerHTML = `<div class="head"></div><div class="big"></div><div class="desc"></div><div class="desc"></div><div class="pills"></div>`;
+    el.appendChild(c);
+  }
+}
+
+function render(industry) {
+  const d = DATA[industry];
+  // row 1
+  row1.innerHTML = "";
+  d.cards.forEach((card) => {
+    const el = document.createElement("div");
+    el.className = "card";
+    el.innerHTML = `
+      <div class="head">${card.head}</div>
+      <div class="big">${card.big}</div>
+      <div class="desc">${card.desc}</div>
+      <div class="pills">${card.pills.map(p=>`<span class="pill">#${p}</span>`).join("")}</div>
+    `;
+    el.addEventListener("click", () => openDrawer(card));
+    row1.appendChild(el);
+  });
+
+  // row 2: ranking + benchmark
+  row2.innerHTML = "";
+  const rankEl = document.createElement("div");
+  rankEl.className = "card";
+  rankEl.innerHTML = `
+    <div class="head">🏆 친구 수 증가율 톱5 (${d.label})</div>
+    <div class="big">우리 업종 상승 채널</div>
+    <div class="ranklist">
+      ${d.rank.map((r,i)=>`<div class="row"><div class="rank">${i+1}</div><div class="name">${r.name}</div><div class="val">${r.val}</div></div>`).join("")}
+    </div>
+  `;
+  row2.appendChild(rankEl);
+
+  const benchEl = document.createElement("div");
+  benchEl.className = "card";
+  const b = d.bench;
+  benchEl.innerHTML = `
+    <div class="head">📊 업종 평균 vs 우리 채널</div>
+    <div class="big">우리 채널은 평균 대비?</div>
+    <div class="ranklist">
+      <div class="row"><div class="name">친구 추가율</div><div class="val">우리 1.0% / 평균 ${b.친구추가율}</div></div>
+      <div class="row"><div class="name">평균 응답 시간</div><div class="val">우리 14분 / 평균 ${b.응답시간}</div></div>
+      <div class="row"><div class="name">메시지 오픈율</div><div class="val">우리 28% / 평균 ${b.메시지오픈율}</div></div>
+      <div class="row"><div class="name">쿠폰 사용률</div><div class="val">우리 8.1% / 평균 ${b.쿠폰사용률}</div></div>
+    </div>
+  `;
+  row2.appendChild(benchEl);
+}
+
+function loadWithSkeleton(industry) {
+  skeletonGrid(row1, 3);
+  skeletonGrid(row2, 2);
+  setTimeout(() => {
+    render(industry);
+    const now = new Date();
+    const pad = (n)=>String(n).padStart(2,"0");
+    $("#lastUpdated").textContent = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())} 갱신`;
+  }, 450);
+}
+
+// drawer
+const drawer = $("#drawer");
+const drawerBg = $("#drawerBg");
+function openDrawer(card) {
+  $("#drawerTitle").textContent = card.detail.title;
+  $("#drawerBody").innerHTML = card.detail.body;
+  drawer.classList.add("on");
+  drawerBg.classList.add("on");
+}
+function closeDrawer() {
+  drawer.classList.remove("on");
+  drawerBg.classList.remove("on");
+}
+$("#drawerClose").addEventListener("click", closeDrawer);
+$("#drawerLater").addEventListener("click", closeDrawer);
+drawerBg.addEventListener("click", closeDrawer);
+$("#drawerApply").addEventListener("click", () => {
+  closeDrawer();
+  showToast("메시지 작성 페이지로 이동합니다 (데모)");
+});
+
+function showToast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("on");
+  setTimeout(()=>t.classList.remove("on"), 1600);
+}
+
+// controls
+$("#industry").addEventListener("change", (e) => {
+  currentIndustry = e.target.value;
+  loadWithSkeleton(currentIndustry);
+});
+document.querySelectorAll("#rangeSeg button").forEach(b => {
+  b.addEventListener("click", () => {
+    document.querySelectorAll("#rangeSeg button").forEach(x=>x.classList.remove("on"));
+    b.classList.add("on");
+    currentRange = +b.dataset.range;
+    loadWithSkeleton(currentIndustry);
+  });
+});
+$("#reload").addEventListener("click", () => loadWithSkeleton(currentIndustry));
+
+// initial
+loadWithSkeleton(currentIndustry);
+</script>
+</body>
+</html>
