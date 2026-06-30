@@ -44,7 +44,25 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 #cm{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#0f172a;min-width:0}
 #chd{padding:12px 18px;border-bottom:1px solid #334155;background:#1e293b;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#f1f5f9;flex-shrink:0;z-index:1}
 #chs{font-size:12px;color:#94a3b8;font-weight:400}
-#bmnav{margin-left:auto;display:flex;align-items:center;gap:8px}
+#bmnav{margin-left:8px;display:flex;align-items:center;gap:8px}
+#usearch{margin-left:auto;display:flex;align-items:center;gap:6px;position:relative}
+#uinput{width:140px;padding:5px 9px;background:#0f172a;border:1px solid #475569;border-radius:6px;color:#e2e8f0;font-size:12px;font-family:inherit;outline:none;transition:border-color .15s,width .2s}
+#uinput:focus{border-color:#8b5cf6;width:170px}
+#uinput::placeholder{color:#64748b}
+#usugg{position:absolute;top:32px;left:0;min-width:170px;max-width:240px;background:#1e293b;border:1px solid #475569;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:50;overflow:hidden;display:none;max-height:260px;overflow-y:auto}
+#usugg.show{display:block}
+.usugg-item{padding:8px 12px;font-size:12px;color:#cbd5e1;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;transition:background .1s}
+.usugg-item:hover,.usugg-item.hl{background:#334155;color:#f1f5f9}
+.usugg-item .cnt{font-size:11px;color:#64748b;font-variant-numeric:tabular-nums}
+.usugg-item .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.usugg-empty{padding:10px 12px;font-size:12px;color:#64748b;text-align:center}
+#unavInfo{font-size:12px;color:#67e8f9;font-weight:600;min-width:36px;text-align:center;font-variant-numeric:tabular-nums}
+#uclear{width:24px;height:24px;border-radius:5px;border:1px solid #475569;background:#0f172a;color:#94a3b8;cursor:pointer;font-size:11px;line-height:1;transition:all .15s;flex-shrink:0}
+#uclear:hover{background:#7f1d1d;border-color:#b91c1c;color:#fecaca}
+#usearch .bmnav-btn:hover:not(:disabled){background:#06b6d4;border-color:#06b6d4;color:#0f172a}
+.mg.u-active{box-shadow:0 0 0 2px #06b6d4,0 0 16px rgba(6,182,212,.6);transition:box-shadow .3s}
+.mg.u-match{background:rgba(6,182,212,.07)}
+.mg.u-match.ldr{background:rgba(139,92,246,.1)}
 .bmnav-divider{width:1px;height:18px;background:#334155}
 #bmtog{display:flex;align-items:center;gap:7px;cursor:pointer;padding:0;user-select:none}
 #bmtog .lbl{font-size:12px;color:#94a3b8;transition:color .15s;font-weight:400}
@@ -92,6 +110,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 #sth:hover{background:rgba(148,163,184,.6)}
 #sth:active{cursor:grabbing}
 .bmk{position:absolute;width:12px;left:2px;height:3px;border-radius:1px;background:#f59e0b;pointer-events:none;box-shadow:0 0 4px rgba(245,158,11,.5)}
+.umk{position:absolute;width:7px;left:0;height:2px;border-radius:1px;background:#06b6d4;pointer-events:none;box-shadow:0 0 3px rgba(6,182,212,.6)}
 #mw{position:absolute;inset:0;z-index:100;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.88)}
 #mw.op{display:flex}
 #mi{position:relative;display:flex;align-items:center;gap:14px;max-width:95%;max-height:95%}
@@ -148,6 +167,14 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
     <div id="chd">
       <span id="chdd">—</span>
       <span id="chs"></span>
+      <div id="usearch">
+        <input type="text" id="uinput" placeholder="사용자 검색…" autocomplete="off">
+        <div id="usugg"></div>
+        <button class="bmnav-btn" id="uPrev" title="이전 메시지" disabled>▲</button>
+        <span id="unavInfo"></span>
+        <button class="bmnav-btn" id="uNext" title="다음 메시지" disabled>▼</button>
+        <button id="uclear" title="검색 해제" style="display:none">✕</button>
+      </div>
       <div id="bmnav">
         <div id="bmtog">
           <div class="pill"></div>
@@ -183,7 +210,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
-const S={msgs:[],files:{},dates:[],sel:null,fs:17,bm:new Set(),bmf:false,zns:[],bmDirty:false,bmCursor:-1,pendingBm:null};
+const S={msgs:[],files:{},dates:[],sel:null,fs:17,bm:new Set(),bmf:false,zns:[],bmDirty:false,bmCursor:-1,pendingBm:null,uQuery:'',uCursor:-1,pendingU:null};
 let mImgs=[],mIdx=0,mOpen=false,tdY=0,tdS=0,tDrag=false;
 
 async function init(){
@@ -219,6 +246,25 @@ async function init(){
   document.getElementById('bmMd').onclick=expMd;
   document.getElementById('bmPrev').onclick=()=>navBm(-1);
   document.getElementById('bmNext').onclick=()=>navBm(1);
+  const ui=document.getElementById('uinput');
+  ui.oninput=()=>renderSugg(ui.value.trim());
+  ui.onfocus=()=>{if(ui.value.trim()||S.uQuery)renderSugg(ui.value.trim());};
+  ui.onkeydown=e=>{
+    const sg=document.getElementById('usugg');
+    const items=[...sg.querySelectorAll('.usugg-item')];
+    let hl=items.findIndex(it=>it.classList.contains('hl'));
+    if(e.key==='ArrowDown'){e.preventDefault();if(items.length){hl=(hl+1)%items.length;items.forEach((it,i)=>it.classList.toggle('hl',i===hl));items[hl].scrollIntoView({block:'nearest'});}}
+    else if(e.key==='ArrowUp'){e.preventDefault();if(items.length){hl=(hl-1+items.length)%items.length;items.forEach((it,i)=>it.classList.toggle('hl',i===hl));items[hl].scrollIntoView({block:'nearest'});}}
+    else if(e.key==='Enter'){e.preventDefault();if(hl>=0&&items[hl])items[hl].click();else if(items.length===1)items[0].click();}
+    else if(e.key==='Escape'){sg.classList.remove('show');ui.blur();}
+  };
+  document.getElementById('uPrev').onclick=()=>navU(-1);
+  document.getElementById('uNext').onclick=()=>navU(1);
+  document.getElementById('uclear').onclick=clearU;
+  document.addEventListener('click',e=>{
+    if(!document.getElementById('usearch').contains(e.target))
+      document.getElementById('usugg').classList.remove('show');
+  });
   const cs=document.getElementById('cs');
   cs.onscroll=updSb;
   const sbt=document.getElementById('sbt'),sth=document.getElementById('sth');
@@ -452,8 +498,9 @@ function rMsgs(){
     const isBm=ids.some(id=>S.bm.has(id));
     const isLdr=g.name==='채상욱 리더';
     const el=document.createElement('div');
-    el.className=`mg${isLdr?' ldr':''}${isBm?' bm':''}`;
+    el.className=`mg${isLdr?' ldr':''}${isBm?' bm':''}${S.uQuery&&g.name===S.uQuery?' u-match':''}`;
     el.dataset.ids=ids.join('|||');
+    el.dataset.uname=g.name;
     el.innerHTML=`<div class="mh"><span class="mn">${esc(g.name)}</span><span class="mt">${esc(g.timeStr)}</span></div>`;
     for(const item of g.items){
       const f=findFile(item.txt,item.ts,used);
@@ -524,6 +571,7 @@ function rMsgs(){
   ma.appendChild(mkDNav('bot'));
   cs.scrollTop=0;
   S.bmCursor=-1;
+  S.uCursor=-1;
   syncSbTop();
   // 다른 날짜로 점프한 북마크 포커스 처리
   if(S.pendingBm&&S.pendingBm.date===S.sel){
@@ -537,7 +585,20 @@ function rMsgs(){
     }
     S.pendingBm=null;
   }
+  // 다른 날짜로 점프한 사용자 메시지 포커스 처리
+  if(S.pendingU&&S.pendingU.date===S.sel){
+    const els=getUEls();
+    const tid=S.pendingU.id,dir=S.pendingU.dir;
+    let idx=els.findIndex(el=>(el.dataset.ids||'').split('|||').includes(tid));
+    if(idx<0&&els.length)idx=dir>0?0:els.length-1;
+    if(idx>=0){
+      S.uCursor=idx;
+      setTimeout(()=>{focusUEl(els[idx]);updUNav();},60);
+    }
+    S.pendingU=null;
+  }
   updBmNav();
+  updUNav();
   setTimeout(updSb,80);
 }
 
@@ -631,6 +692,138 @@ function focusBmEl(el){
   setTimeout(()=>el.classList.remove('bm-active'),1400);
 }
 
+// ===== 사용자 검색 =====
+function userCounts(){
+  const c={};
+  S.msgs.forEach(m=>{c[m.name]=(c[m.name]||0)+1;});
+  return c;
+}
+
+function renderSugg(q){
+  const sg=document.getElementById('usugg');
+  const counts=userCounts();
+  let names=Object.keys(counts);
+  if(q)names=names.filter(n=>n.toLowerCase().includes(q.toLowerCase()));
+  names.sort((a,b)=>counts[b]-counts[a]);
+  names=names.slice(0,40);
+  if(!names.length){
+    sg.innerHTML=`<div class="usugg-empty">일치하는 사용자가 없습니다</div>`;
+    sg.classList.add('show');
+    return;
+  }
+  sg.innerHTML=names.map(n=>
+    `<div class="usugg-item" data-n="${esc(n)}"><span class="nm">${esc(n)}</span><span class="cnt">${counts[n]}</span></div>`
+  ).join('');
+  sg.querySelectorAll('.usugg-item').forEach(it=>{
+    it.onclick=()=>selectUser(it.dataset.n);
+  });
+  sg.classList.add('show');
+}
+
+function selectUser(name){
+  S.uQuery=name;
+  S.uCursor=-1;
+  document.getElementById('uinput').value=name;
+  document.getElementById('usugg').classList.remove('show');
+  document.getElementById('uclear').style.display='';
+  rMsgs();
+  // 첫 검색 시 현재 날짜에 해당 사용자 메시지가 없으면 가장 가까운 날짜로
+  const dayHas=S.msgs.some(m=>m.date===S.sel&&m.name===name);
+  if(!dayHas)navU(1);
+  else updUNav();
+}
+
+function clearU(){
+  S.uQuery='';
+  S.uCursor=-1;
+  document.getElementById('uinput').value='';
+  document.getElementById('uclear').style.display='none';
+  document.getElementById('usugg').classList.remove('show');
+  rMsgs();
+}
+
+function getUEls(){
+  if(!S.uQuery)return [];
+  return [...document.querySelectorAll('#ma .mg')].filter(el=>el.dataset.uname===S.uQuery);
+}
+
+function allUMsgs(){
+  if(!S.uQuery)return [];
+  return S.msgs.filter(m=>m.name===S.uQuery).sort((a,b)=>a.ts-b.ts);
+}
+
+function updUNav(){
+  const info=document.getElementById('unavInfo');
+  const prev=document.getElementById('uPrev'),next=document.getElementById('uNext');
+  if(!S.uQuery){info.textContent='';prev.disabled=true;next.disabled=true;return;}
+  const total=allUMsgs().length;
+  const els=getUEls();
+  if(S.uCursor>=0&&S.uCursor<els.length){
+    const all=allUMsgs();
+    const ids=(els[S.uCursor].dataset.ids||'').split('|||');
+    const gIdx=all.findIndex(m=>ids.includes(m.id));
+    info.textContent=gIdx>=0?`${gIdx+1}/${total}`:`${total}`;
+  }else{
+    info.textContent=`${total}`;
+  }
+  prev.disabled=!total;next.disabled=!total;
+}
+
+function navU(dir){
+  if(!S.uQuery)return;
+  const total=allUMsgs().length;
+  if(!total)return;
+  const cs=document.getElementById('cs');
+  const els=getUEls();
+  if(els.length){
+    let nextIdx;
+    if(S.uCursor<0){
+      if(dir>0){
+        const vis=els.findIndex(el=>el.offsetTop>=cs.scrollTop-4);
+        if(vis<0){gotoOtherDayU(dir);return;}
+        nextIdx=vis;
+      }else{
+        let vis=-1;
+        for(let i=els.length-1;i>=0;i--){if(els[i].offsetTop<cs.scrollTop-4){vis=i;break;}}
+        if(vis<0){gotoOtherDayU(dir);return;}
+        nextIdx=vis;
+      }
+    }else{
+      nextIdx=S.uCursor+dir;
+      if(nextIdx<0||nextIdx>=els.length){gotoOtherDayU(dir);return;}
+    }
+    S.uCursor=nextIdx;
+    focusUEl(els[S.uCursor]);
+    updUNav();
+    return;
+  }
+  gotoOtherDayU(dir);
+}
+
+function gotoOtherDayU(dir){
+  const all=allUMsgs();
+  if(!all.length)return;
+  const curDate=S.sel;
+  let targetMsg=null;
+  if(dir>0){
+    targetMsg=all.find(m=>m.date>curDate)||all[0];
+  }else{
+    for(let i=all.length-1;i>=0;i--){if(all[i].date<curDate){targetMsg=all[i];break;}}
+    if(!targetMsg)targetMsg=all[all.length-1];
+  }
+  if(!targetMsg)return;
+  S.pendingU={date:targetMsg.date,id:targetMsg.id,dir};
+  selD(targetMsg.date);
+}
+
+function focusUEl(el){
+  const cs=document.getElementById('cs');
+  getUEls().forEach(e=>e.classList.remove('u-active'));
+  el.classList.add('u-active');
+  cs.scrollTo({top:el.offsetTop-cs.clientHeight/2+el.offsetHeight/2,behavior:'smooth'});
+  setTimeout(()=>el.classList.remove('u-active'),1400);
+}
+
 function updSb(){
   const cs=document.getElementById('cs'),sb=document.getElementById('sbt'),th=document.getElementById('sth');
   sb.querySelectorAll('.bmk').forEach(e=>e.remove());
@@ -646,6 +839,12 @@ function updSb(){
     if((el.dataset.ids||'').split('|||').some(id=>S.bm.has(id))){
       const mk=document.createElement('div');
       mk.className='bmk';
+      mk.style.top=(el.offsetTop/sh*trH)+'px';
+      sb.appendChild(mk);
+    }
+    if(S.uQuery&&el.dataset.uname===S.uQuery){
+      const mk=document.createElement('div');
+      mk.className='umk';
       mk.style.top=(el.offsetTop/sh*trH)+'px';
       sb.appendChild(mk);
     }
