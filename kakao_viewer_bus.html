@@ -183,7 +183,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
-const S={msgs:[],files:{},dates:[],sel:null,fs:17,bm:new Set(),bmf:false,zns:[],bmDirty:false,bmCursor:-1};
+const S={msgs:[],files:{},dates:[],sel:null,fs:17,bm:new Set(),bmf:false,zns:[],bmDirty:false,bmCursor:-1,pendingBm:null};
 let mImgs=[],mIdx=0,mOpen=false,tdY=0,tdS=0,tDrag=false;
 
 async function init(){
@@ -525,6 +525,18 @@ function rMsgs(){
   cs.scrollTop=0;
   S.bmCursor=-1;
   syncSbTop();
+  // 다른 날짜로 점프한 북마크 포커스 처리
+  if(S.pendingBm&&S.pendingBm.date===S.sel){
+    const els=getBmEls();
+    const tid=S.pendingBm.id,dir=S.pendingBm.dir;
+    let idx=els.findIndex(el=>(el.dataset.ids||'').split('|||').includes(tid));
+    if(idx<0&&els.length)idx=dir>0?0:els.length-1;
+    if(idx>=0){
+      S.bmCursor=idx;
+      setTimeout(()=>{focusBmEl(els[idx]);updBmNav();},60);
+    }
+    S.pendingBm=null;
+  }
   updBmNav();
   setTimeout(updSb,80);
 }
@@ -535,43 +547,88 @@ function getBmEls(){
   );
 }
 
+function allBmMsgs(){
+  return S.msgs.filter(m=>S.bm.has(m.id)).sort((a,b)=>a.ts-b.ts);
+}
+
 function updBmNav(){
-  const els=getBmEls();
+  const total=S.bm.size;
   const info=document.getElementById('bmnavInfo');
   const prev=document.getElementById('bmPrev'),next=document.getElementById('bmNext');
-  if(els.length===0){
+  if(total===0){
     info.textContent='★ 0';
     prev.disabled=true;next.disabled=true;
     return;
   }
-  const pos=S.bmCursor>=0&&S.bmCursor<els.length?`${S.bmCursor+1}/${els.length}`:`★ ${els.length}`;
-  info.textContent=pos;
+  const dayEls=getBmEls();
+  if(S.bmCursor>=0&&S.bmCursor<dayEls.length){
+    const all=allBmMsgs();
+    const ids=(dayEls[S.bmCursor].dataset.ids||'').split('|||');
+    const gIdx=all.findIndex(m=>ids.includes(m.id));
+    info.textContent=gIdx>=0?`${gIdx+1}/${total}`:`★ ${total}`;
+  }else{
+    info.textContent=`★ ${total}`;
+  }
   prev.disabled=false;next.disabled=false;
 }
 
 function navBm(dir){
-  const els=getBmEls();
-  if(!els.length)return;
+  const total=S.bm.size;
+  if(!total)return;
   const cs=document.getElementById('cs');
-  if(S.bmCursor<0){
-    if(dir>0){
-      const vis=els.findIndex(el=>el.offsetTop>=cs.scrollTop-4);
-      S.bmCursor=vis>=0?vis:0;
+  const dayEls=getBmEls();
+
+  // 현재 날짜 내에서 이동 가능한지 먼저 판단
+  if(dayEls.length){
+    let nextIdx;
+    if(S.bmCursor<0){
+      if(dir>0){
+        const vis=dayEls.findIndex(el=>el.offsetTop>=cs.scrollTop-4);
+        nextIdx=vis>=0?vis:null; // 아래쪽에 북마크 없으면 다음 날짜로
+        if(nextIdx===null){gotoOtherDayBm(dir);return;}
+      }else{
+        let vis=-1;
+        for(let i=dayEls.length-1;i>=0;i--){if(dayEls[i].offsetTop<cs.scrollTop-4){vis=i;break;}}
+        nextIdx=vis>=0?vis:null; // 위쪽에 북마크 없으면 이전 날짜로
+        if(nextIdx===null){gotoOtherDayBm(dir);return;}
+      }
     }else{
-      let vis=-1;
-      for(let i=els.length-1;i>=0;i--){if(els[i].offsetTop<cs.scrollTop-4){vis=i;break;}}
-      S.bmCursor=vis>=0?vis:els.length-1;
+      nextIdx=S.bmCursor+dir;
+      if(nextIdx<0||nextIdx>=dayEls.length){gotoOtherDayBm(dir);return;}
     }
-  }else{
-    S.bmCursor=(S.bmCursor+dir+els.length)%els.length;
+    S.bmCursor=nextIdx;
+    focusBmEl(dayEls[S.bmCursor]);
+    updBmNav();
+    return;
   }
-  const target=els[S.bmCursor];
-  els.forEach(el=>el.classList.remove('bm-active'));
-  target.classList.add('bm-active');
-  const csH=cs.clientHeight;
-  cs.scrollTo({top:target.offsetTop-csH/2+target.offsetHeight/2,behavior:'smooth'});
-  setTimeout(()=>target.classList.remove('bm-active'),1400);
-  updBmNav();
+  // 현재 날짜에 북마크가 아예 없으면 바로 다른 날짜로
+  gotoOtherDayBm(dir);
+}
+
+function gotoOtherDayBm(dir){
+  const all=allBmMsgs();
+  if(!all.length)return;
+  // 현재 날짜 기준으로 dir 방향의 첫 북마크 메시지를 찾는다
+  const curDate=S.sel;
+  let targetMsg=null;
+  if(dir>0){
+    targetMsg=all.find(m=>m.date>curDate);
+    if(!targetMsg)targetMsg=all[0]; // 순환: 처음으로
+  }else{
+    for(let i=all.length-1;i>=0;i--){if(all[i].date<curDate){targetMsg=all[i];break;}}
+    if(!targetMsg)targetMsg=all[all.length-1]; // 순환: 끝으로
+  }
+  if(!targetMsg)return;
+  S.pendingBm={date:targetMsg.date,id:targetMsg.id,dir};
+  selD(targetMsg.date);
+}
+
+function focusBmEl(el){
+  const cs=document.getElementById('cs');
+  getBmEls().forEach(e=>e.classList.remove('bm-active'));
+  el.classList.add('bm-active');
+  cs.scrollTo({top:el.offsetTop-cs.clientHeight/2+el.offsetHeight/2,behavior:'smooth'});
+  setTimeout(()=>el.classList.remove('bm-active'),1400);
 }
 
 function updSb(){
