@@ -139,7 +139,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
       <div id="bmCnt"></div>
     </div>
     <div class="dl-wrap">
-      <div class="sb-lb">날짜 (최신순)</div>
+      <div class="sb-lb">날짜 (오름차순)</div>
       <div id="dl"></div>
     </div>
   </aside>
@@ -294,7 +294,7 @@ async function loadZip(file){
     updDates();
     if(!S.zns.includes(file.name))S.zns.push(file.name);
     rZl();rDl();
-    if(!S.sel&&S.dates.length)selD(S.dates[0]);
+    if(!S.sel&&S.dates.length)selD(S.dates[S.dates.length-1]);
     else if(S.sel)rMsgs();
   }catch(e){
     console.error(e);
@@ -337,7 +337,7 @@ function mrgMsgs(nm){
 
 function updDates(){
   const ds=new Set(S.msgs.map(m=>m.date));
-  S.dates=[...ds].sort().reverse();
+  S.dates=[...ds].sort();
 }
 
 function grpMsgs(msgs){
@@ -408,8 +408,8 @@ function rMsgs(){
   const dStr=S.sel.replace(/-/g,'');
   mImgs=Object.values(S.files).filter(f=>f.nm.startsWith(dStr)&&['jpg','jpeg','png','gif','webp'].includes(f.ext)).sort((a,b)=>a.nm.localeCompare(b.nm));
   const curIdx=S.dates.indexOf(S.sel);
-  const olderDate=curIdx<S.dates.length-1?S.dates[curIdx+1]:null;
-  const newerDate=curIdx>0?S.dates[curIdx-1]:null;
+  const olderDate=curIdx>0?S.dates[curIdx-1]:null;
+  const newerDate=curIdx<S.dates.length-1?S.dates[curIdx+1]:null;
   const days=['일','월','화','수','목','금','토'];
   const mkBtn=(date,isPrev)=>{
     const btn=document.createElement('button');
