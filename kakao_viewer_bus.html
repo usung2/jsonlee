@@ -827,7 +827,7 @@ function focusUEl(el){
 
 function updSb(){
   const cs=document.getElementById('cs'),sb=document.getElementById('sbt'),th=document.getElementById('sth');
-  sb.querySelectorAll('.bmk').forEach(e=>e.remove());
+  sb.querySelectorAll('.bmk,.umk').forEach(e=>e.remove());
   const{scrollTop:st,scrollHeight:sh,clientHeight:ch}=cs;
   if(sh<=ch){th.style.display='none';return;}
   th.style.display='block';
@@ -840,12 +840,6 @@ function updSb(){
     if((el.dataset.ids||'').split('|||').some(id=>S.bm.has(id))){
       const mk=document.createElement('div');
       mk.className='bmk';
-      mk.style.top=(el.offsetTop/sh*trH)+'px';
-      sb.appendChild(mk);
-    }
-    if(S.uQuery&&el.dataset.uname===S.uQuery){
-      const mk=document.createElement('div');
-      mk.className='umk';
       mk.style.top=(el.offsetTop/sh*trH)+'px';
       sb.appendChild(mk);
     }
