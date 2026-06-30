@@ -70,7 +70,15 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 .apdf{display:inline-flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;cursor:pointer;border:1px solid #475569;background:#1e293b;font-size:13px;color:#cbd5e1;max-width:280px;overflow:hidden;transition:all .15s}
 .apdf:hover{background:#334155;border-color:#64748b}
 .apdf-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#est{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;color:#64748b;font-size:14px;text-align:center;padding:40px 20px}
+.dnav-bar{display:flex;gap:8px}
+.dnav-bar.dnav-top{margin:4px 0 14px}
+.dnav-bar.dnav-bot{margin:20px 0 6px}
+.dnav-btn{flex:1;padding:10px 14px;background:#1e293b;border:1px solid #334155;border-radius:8px;color:#cbd5e1;cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .15s;font-family:inherit;white-space:nowrap;overflow:hidden;min-width:0}
+.dnav-btn:hover:not(.dnav-disabled){background:#334155;border-color:#64748b;color:#f1f5f9}
+.dnav-btn.dnav-disabled{cursor:default;opacity:.35;background:transparent}
+.dnav-arrow{font-size:16px;font-weight:700;color:#94a3b8;flex-shrink:0}
+.dnav-btn:hover:not(.dnav-disabled) .dnav-arrow{color:#a78bfa}
+#est{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:200px;gap:10px;color:#64748b;font-size:14px;text-align:center;padding:40px 20px}
 #est .big{font-size:42px;margin-bottom:4px}
 #sbt{position:absolute;right:0;width:16px;background:rgba(255,255,255,.02);cursor:pointer}
 #sth{position:absolute;width:8px;left:4px;border-radius:4px;background:rgba(148,163,184,.4);min-height:24px;cursor:grab;transition:background .1s}
@@ -384,9 +392,42 @@ function rMsgs(){
   document.getElementById('chs').textContent=`메시지 ${msgs.length}개`;
   const dStr=S.sel.replace(/-/g,'');
   mImgs=Object.values(S.files).filter(f=>f.nm.startsWith(dStr)&&['jpg','jpeg','png','gif','webp'].includes(f.ext)).sort((a,b)=>a.nm.localeCompare(b.nm));
+  const curIdx=S.dates.indexOf(S.sel);
+  const olderDate=curIdx<S.dates.length-1?S.dates[curIdx+1]:null;
+  const newerDate=curIdx>0?S.dates[curIdx-1]:null;
+  const days=['일','월','화','수','목','금','토'];
+  const mkBtn=(date,isPrev)=>{
+    const btn=document.createElement('button');
+    btn.className='dnav-btn';
+    if(date){
+      const[yy,mm,dde]=date.split('-');
+      const dow=days[new Date(+yy,+mm-1,+dde).getDay()];
+      const lbl=`${+mm}월 ${+dde}일 (${dow})`;
+      btn.innerHTML=isPrev?`<span class="dnav-arrow">←</span><span>${esc(lbl)}</span>`:`<span>${esc(lbl)}</span><span class="dnav-arrow">→</span>`;
+      btn.onclick=()=>selD(date);
+      btn.title=isPrev?'이전 날짜로':'이후 날짜로';
+    }else{
+      btn.classList.add('dnav-disabled');
+      btn.textContent=isPrev?'이전 날짜 없음':'이후 날짜 없음';
+      btn.disabled=true;
+    }
+    return btn;
+  };
+  const mkDNav=pos=>{
+    const w=document.createElement('div');
+    w.className=`dnav-bar dnav-${pos}`;
+    w.appendChild(mkBtn(olderDate,true));
+    w.appendChild(mkBtn(newerDate,false));
+    return w;
+  };
   ma.innerHTML='';
+  ma.appendChild(mkDNav('top'));
   if(!gs.length){
-    ma.innerHTML=`<div id="est"><div class="big">🔍</div><div>${S.bmf?'북마크된 메시지가 없습니다':'표시할 메시지가 없습니다'}</div></div>`;
+    const est=document.createElement('div');
+    est.id='est';
+    est.innerHTML=`<div class="big">🔍</div><div>${S.bmf?'북마크된 메시지가 없습니다':'표시할 메시지가 없습니다'}</div>`;
+    ma.appendChild(est);
+    ma.appendChild(mkDNav('bot'));
     setTimeout(updSb,30);
     return;
   }
@@ -432,19 +473,38 @@ function rMsgs(){
       }
     }
     el.addEventListener('dblclick',()=>{
-      const ids=el.dataset.ids.split('|||');
-      const allBm=ids.every(id=>S.bm.has(id));
-      if(allBm)ids.forEach(id=>S.bm.delete(id));
-      else ids.forEach(id=>S.bm.add(id));
+      const itemIds=el.dataset.ids.split('|||');
+      const allBm=itemIds.every(id=>S.bm.has(id));
+      if(allBm)itemIds.forEach(id=>S.bm.delete(id));
+      else itemIds.forEach(id=>S.bm.add(id));
       el.classList.toggle('bm',!allBm);
       S.bmDirty=true;
       saveBm();
       rDl();
+      if(S.bmf&&allBm){
+        const savedScroll=cs.scrollTop;
+        const elTop=el.offsetTop;
+        const elHeight=el.offsetHeight;
+        el.remove();
+        if(elTop<savedScroll){
+          cs.scrollTop=Math.max(0,savedScroll-elHeight);
+        }
+        if(!ma.querySelector('.mg')){
+          const est=document.createElement('div');
+          est.id='est';
+          est.innerHTML=`<div class="big">🔍</div><div>북마크된 메시지가 없습니다</div>`;
+          const navTop=ma.querySelector('.dnav-bar.dnav-top');
+          if(navTop)navTop.after(est);else ma.appendChild(est);
+        }
+        const remaining=S.msgs.filter(m=>m.date===S.sel&&S.bm.has(m.id)).length;
+        document.getElementById('chs').textContent=`메시지 ${remaining}개`;
+      }
       updSb();
     });
     frag.appendChild(el);
   }
   ma.appendChild(frag);
+  ma.appendChild(mkDNav('bot'));
   cs.scrollTop=0;
   syncSbTop();
   setTimeout(updSb,80);
