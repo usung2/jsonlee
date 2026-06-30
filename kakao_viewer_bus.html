@@ -17,14 +17,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 .fc-btn{width:26px;height:26px;border-radius:5px;border:1px solid #475569;background:#0f172a;color:#e2e8f0;cursor:pointer;font-size:14px;font-weight:500;display:flex;align-items:center;justify-content:center;line-height:1;transition:all .15s}
 .fc-btn:hover{background:#334155;border-color:#64748b}
 #fv{font-size:13px;min-width:24px;text-align:center;color:#f1f5f9;font-weight:500}
-#bmtog{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 0;user-select:none}
-#bmtog .lbl{font-size:13px;color:#cbd5e1;transition:color .15s}
-.pill{width:32px;height:18px;border-radius:9px;background:#475569;position:relative;flex-shrink:0;transition:background .15s}
-.pill::after{content:'';position:absolute;width:14px;height:14px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
-#bmtog.on .pill{background:#f59e0b}
-#bmtog.on .pill::after{left:16px}
-#bmtog.on .lbl{color:#fbbf24}
-.bm-actions{display:flex;gap:5px;margin-top:10px;flex-wrap:wrap}
+.bm-actions{display:flex;gap:5px;margin-top:4px;flex-wrap:wrap}
 .bm-btn{flex:1;min-width:0;padding:6px 4px;border-radius:5px;border:1px solid #475569;background:#0f172a;color:#cbd5e1;cursor:pointer;font-size:11px;font-weight:500;transition:all .15s;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bm-btn:hover{background:#334155;border-color:#64748b;color:#f1f5f9}
 .bm-btn-md{background:#1e1b4b;border-color:#6d28d9;color:#c4b5fd}
@@ -51,6 +44,20 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 #cm{flex:1;display:flex;flex-direction:column;overflow:hidden;position:relative;background:#0f172a;min-width:0}
 #chd{padding:12px 18px;border-bottom:1px solid #334155;background:#1e293b;display:flex;align-items:center;gap:10px;font-size:14px;font-weight:600;color:#f1f5f9;flex-shrink:0;z-index:1}
 #chs{font-size:12px;color:#94a3b8;font-weight:400}
+#bmnav{margin-left:auto;display:flex;align-items:center;gap:8px}
+.bmnav-divider{width:1px;height:18px;background:#334155}
+#bmtog{display:flex;align-items:center;gap:7px;cursor:pointer;padding:0;user-select:none}
+#bmtog .lbl{font-size:12px;color:#94a3b8;transition:color .15s;font-weight:400}
+#bmtog.on .lbl{color:#fbbf24}
+.pill{width:30px;height:17px;border-radius:9px;background:#475569;position:relative;flex-shrink:0;transition:background .15s}
+.pill::after{content:'';position:absolute;width:13px;height:13px;border-radius:50%;background:#fff;top:2px;left:2px;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.3)}
+#bmtog.on .pill{background:#f59e0b}
+#bmtog.on .pill::after{left:15px}
+.bmnav-btn{width:26px;height:26px;border-radius:5px;border:1px solid #475569;background:#0f172a;color:#cbd5e1;cursor:pointer;font-size:11px;display:flex;align-items:center;justify-content:center;transition:all .15s;line-height:1}
+.bmnav-btn:hover:not(:disabled){background:#f59e0b;border-color:#f59e0b;color:#0f172a}
+.bmnav-btn:disabled{opacity:.3;cursor:default}
+#bmnavInfo{font-size:12px;color:#fbbf24;font-weight:600;min-width:42px;text-align:center;font-variant-numeric:tabular-nums}
+.mg.bm-active{box-shadow:0 0 0 2px #f59e0b,0 0 16px rgba(245,158,11,.6);transition:box-shadow .3s}
 #cs{flex:1;overflow-y:scroll;padding:14px 30px 14px 18px;scrollbar-width:none}
 #cs::-webkit-scrollbar{display:none}
 .mg{padding:10px 14px;border-radius:10px;margin-bottom:4px;border-left:3px solid transparent;cursor:default;transition:background .12s;background:transparent}
@@ -123,10 +130,6 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
           <button class="fc-btn" id="finc">+</button>
         </div>
       </div>
-      <div id="bmtog">
-        <div class="pill"></div>
-        <span class="lbl">북마크만 보기</span>
-      </div>
       <div class="bm-actions">
         <button class="bm-btn" id="bmExp" title="북마크를 JSON 파일로 다운로드">⬇ 내보내기</button>
         <button class="bm-btn" id="bmImp" title="북마크 JSON 파일 가져오기">⬆ 가져오기</button>
@@ -145,6 +148,16 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
     <div id="chd">
       <span id="chdd">—</span>
       <span id="chs"></span>
+      <div id="bmnav">
+        <div id="bmtog">
+          <div class="pill"></div>
+          <span class="lbl">북마크만</span>
+        </div>
+        <div class="bmnav-divider"></div>
+        <button class="bmnav-btn" id="bmPrev" title="이전 북마크 (이 날짜 내)">▲</button>
+        <span id="bmnavInfo">★ 0</span>
+        <button class="bmnav-btn" id="bmNext" title="다음 북마크 (이 날짜 내)">▼</button>
+      </div>
     </div>
     <div id="cs">
       <div id="ma">
@@ -170,7 +183,7 @@ html,body{height:100%;overflow:hidden;background:#0f172a;font-family:'Apple SD G
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
-const S={msgs:[],files:{},dates:[],sel:null,fs:17,bm:new Set(),bmf:false,zns:[],bmDirty:false};
+const S={msgs:[],files:{},dates:[],sel:null,fs:17,bm:new Set(),bmf:false,zns:[],bmDirty:false,bmCursor:-1};
 let mImgs=[],mIdx=0,mOpen=false,tdY=0,tdS=0,tDrag=false;
 
 async function init(){
@@ -204,6 +217,8 @@ async function init(){
     e.target.value='';
   };
   document.getElementById('bmMd').onclick=expMd;
+  document.getElementById('bmPrev').onclick=()=>navBm(-1);
+  document.getElementById('bmNext').onclick=()=>navBm(1);
   const cs=document.getElementById('cs');
   cs.onscroll=updSb;
   const sbt=document.getElementById('sbt'),sth=document.getElementById('sth');
@@ -499,6 +514,8 @@ function rMsgs(){
         const remaining=S.msgs.filter(m=>m.date===S.sel&&S.bm.has(m.id)).length;
         document.getElementById('chs').textContent=`메시지 ${remaining}개`;
       }
+      S.bmCursor=-1;
+      updBmNav();
       updSb();
     });
     frag.appendChild(el);
@@ -506,8 +523,55 @@ function rMsgs(){
   ma.appendChild(frag);
   ma.appendChild(mkDNav('bot'));
   cs.scrollTop=0;
+  S.bmCursor=-1;
   syncSbTop();
+  updBmNav();
   setTimeout(updSb,80);
+}
+
+function getBmEls(){
+  return [...document.querySelectorAll('#ma .mg')].filter(el=>
+    (el.dataset.ids||'').split('|||').some(id=>S.bm.has(id))
+  );
+}
+
+function updBmNav(){
+  const els=getBmEls();
+  const info=document.getElementById('bmnavInfo');
+  const prev=document.getElementById('bmPrev'),next=document.getElementById('bmNext');
+  if(els.length===0){
+    info.textContent='★ 0';
+    prev.disabled=true;next.disabled=true;
+    return;
+  }
+  const pos=S.bmCursor>=0&&S.bmCursor<els.length?`${S.bmCursor+1}/${els.length}`:`★ ${els.length}`;
+  info.textContent=pos;
+  prev.disabled=false;next.disabled=false;
+}
+
+function navBm(dir){
+  const els=getBmEls();
+  if(!els.length)return;
+  const cs=document.getElementById('cs');
+  if(S.bmCursor<0){
+    if(dir>0){
+      const vis=els.findIndex(el=>el.offsetTop>=cs.scrollTop-4);
+      S.bmCursor=vis>=0?vis:0;
+    }else{
+      let vis=-1;
+      for(let i=els.length-1;i>=0;i--){if(els[i].offsetTop<cs.scrollTop-4){vis=i;break;}}
+      S.bmCursor=vis>=0?vis:els.length-1;
+    }
+  }else{
+    S.bmCursor=(S.bmCursor+dir+els.length)%els.length;
+  }
+  const target=els[S.bmCursor];
+  els.forEach(el=>el.classList.remove('bm-active'));
+  target.classList.add('bm-active');
+  const csH=cs.clientHeight;
+  cs.scrollTo({top:target.offsetTop-csH/2+target.offsetHeight/2,behavior:'smooth'});
+  setTimeout(()=>target.classList.remove('bm-active'),1400);
+  updBmNav();
 }
 
 function updSb(){
